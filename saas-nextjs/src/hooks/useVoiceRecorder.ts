@@ -210,6 +210,7 @@ export const useVoiceRecorder = () => {
 
         source.connect(processor)
         processor.connect(mute)
+        // ScriptProcessor only runs when connected into a live output graph.
         mute.connect(ctx.destination)
         setState('recording')
       } catch (err) {

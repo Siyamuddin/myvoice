@@ -35,6 +35,13 @@ class GeminiLiveClientTest {
                 .isEqualTo("models/gemini-live-2.5-flash-native-audio");
         assertThat(setup.get("generationConfig").get("responseModalities").get(0).asText())
                 .isEqualTo("AUDIO");
+        assertThat(setup.get("generationConfig")
+                        .get("speechConfig")
+                        .get("voiceConfig")
+                        .get("prebuiltVoiceConfig")
+                        .get("voiceName")
+                        .asText())
+                .isEqualTo("Kore");
         assertThat(setup.get("realtimeInputConfig").get("automaticActivityDetection").isObject())
                 .isTrue();
         assertThat(setup.get("systemInstruction").get("parts").get(0).get("text").asText())

@@ -190,6 +190,10 @@ public class GeminiLiveClient {
             ObjectNode generationConfig = setup.putObject("generationConfig");
             ArrayNode modalities = generationConfig.putArray("responseModalities");
             modalities.add("AUDIO");
+            ObjectNode speechConfig = generationConfig.putObject("speechConfig");
+            ObjectNode voiceConfig = speechConfig.putObject("voiceConfig");
+            ObjectNode prebuiltVoiceConfig = voiceConfig.putObject("prebuiltVoiceConfig");
+            prebuiltVoiceConfig.put("voiceName", "Kore");
             ObjectNode realtimeInputConfig = setup.putObject("realtimeInputConfig");
             realtimeInputConfig.putObject("automaticActivityDetection");
             ObjectNode systemInstruction = setup.putObject("systemInstruction");

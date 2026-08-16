@@ -23,12 +23,19 @@ describe('useAudioPlayer', () => {
     createBuffer: ReturnType<typeof vi.fn>
     createBufferSource: ReturnType<typeof vi.fn>
     createGain: ReturnType<typeof vi.fn>
+    createMediaStreamDestination: ReturnType<typeof vi.fn>
   }
+  let mediaDest: { stream: MediaStream; context: unknown; connect?: unknown }
 
   beforeEach(() => {
     __resetSharedAudioContextForTests()
     currentTime = 10
     createdSources = []
+
+    mediaDest = {
+      stream: { id: 'fake-stream' } as unknown as MediaStream,
+      context: null,
+    }
 
     fakeContext = {
       get currentTime() {
@@ -39,15 +46,14 @@ describe('useAudioPlayer', () => {
       destination: {},
       resume: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
-      createGain: vi.fn(() => ({
-        gain: { value: 1 },
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        context: null as unknown as AudioContext,
-      })),
+      createGain: vi.fn(),
+      createMediaStreamDestination: vi.fn(() => {
+        mediaDest.context = fakeContext
+        return mediaDest
+      }),
       createBuffer: vi.fn((channels: number, length: number, sampleRate: number) => {
         const channelData = new Float32Array(length)
-        const buffer = {
+        return {
           numberOfChannels: channels,
           length,
           sampleRate,
@@ -59,7 +65,6 @@ describe('useAudioPlayer', () => {
           },
           getChannelData: () => channelData,
         }
-        return buffer
       }),
       createBufferSource: vi.fn(() => {
         const source = {
@@ -75,7 +80,6 @@ describe('useAudioPlayer', () => {
       }),
     }
 
-    // Attach context onto gain nodes created by this fake context.
     fakeContext.createGain = vi.fn(() => ({
       gain: { value: 1 },
       connect: vi.fn(),
@@ -83,12 +87,35 @@ describe('useAudioPlayer', () => {
       context: fakeContext as unknown as AudioContext,
     }))
 
+    class FakeAudio {
+      autoplay = false
+      controls = false
+      preload = ''
+      muted = false
+      volume = 1
+      paused = false
+      srcObject: MediaStream | null = null
+      style: Record<string, string> = {}
+      setAttribute = vi.fn()
+      play = vi.fn().mockResolvedValue(undefined)
+      pause = vi.fn()
+      remove = vi.fn()
+    }
+
     vi.stubGlobal(
       'AudioContext',
       vi.fn(function AudioContext() {
         return fakeContext
       }) as unknown as typeof AudioContext
     )
+    vi.stubGlobal('HTMLAudioElement', FakeAudio)
+    vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
+      if (tag === 'audio') {
+        return new FakeAudio() as unknown as HTMLElement
+      }
+      return document.createElementNS('http://www.w3.org/1999/xhtml', tag)
+    }) as typeof document.createElement)
+    vi.spyOn(document.body, 'appendChild').mockImplementation((node) => node)
   })
 
   afterEach(() => {
@@ -133,7 +160,7 @@ describe('useAudioPlayer', () => {
     expect(result.current.isPlaying()).toBe(false)
   })
 
-  it('ensureContext unlocks a suspended AudioContext', async () => {
+  it('ensureContext unlocks a suspended AudioContext and plays the audio element', async () => {
     fakeContext.state = 'suspended'
     const { result } = renderHook(() => useAudioPlayer())
 
@@ -143,6 +170,7 @@ describe('useAudioPlayer', () => {
 
     expect(AudioContext).toHaveBeenCalled()
     expect(fakeContext.resume).toHaveBeenCalled()
+    expect(fakeContext.createMediaStreamDestination).toHaveBeenCalled()
   })
 
   it('resamples 24kHz PCM when context sample rate differs', () => {
