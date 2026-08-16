@@ -163,19 +163,23 @@ export const SettingsPanel = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-4xl text-ink">Settings</h1>
-        <p className="mt-2 text-ink-soft">Configure email, security, storage, OAuth, and voice free-beta caps.</p>
+        <h1 className="font-display text-3xl text-ink sm:text-4xl">Settings</h1>
+        <p className="mt-2 text-sm text-ink-soft sm:text-base">
+          Configure email, security, storage, OAuth, and voice free-beta caps.
+        </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="tab-scroller -mx-1 px-1" role="tablist" aria-label="Settings categories">
         {TABS.map((item) => (
           <button
             key={item.id}
             type="button"
+            role="tab"
             onClick={() => setTab(item.id)}
-            className={`rounded-md px-3 py-2 text-sm font-medium transition ${
+            className={`shrink-0 min-h-11 rounded-md px-3.5 py-2.5 text-sm font-medium transition ${
               tab === item.id ? 'bg-teal text-white' : 'border border-line text-ink-soft hover:text-ink'
             }`}
+            aria-selected={tab === item.id}
             aria-pressed={tab === item.id}
           >
             {item.label}
@@ -183,8 +187,8 @@ export const SettingsPanel = () => {
         ))}
       </div>
 
-      <div className="glass-panel space-y-5 rounded-2xl p-6">
-        <h2 className="font-display text-2xl text-ink">{title}</h2>
+      <div className="glass-panel space-y-5 rounded-2xl p-4 sm:p-6">
+        <h2 className="font-display text-xl text-ink sm:text-2xl">{title}</h2>
 
         {tab === 'voice' && voice && (
           <>
@@ -258,7 +262,7 @@ export const SettingsPanel = () => {
               onClick={() => {
                 void handleSaveVoice()
               }}
-              className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+              className="min-h-11 w-full rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
             >
               Save voice settings
             </button>
@@ -375,14 +379,14 @@ export const SettingsPanel = () => {
               />
               Email enabled
             </label>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <button
                 type="button"
                 disabled={saving}
                 onClick={() => {
                   void handleSaveEmail()
                 }}
-                className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                className="min-h-11 w-full rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
               >
                 Save email settings
               </button>
@@ -394,7 +398,7 @@ export const SettingsPanel = () => {
                     .then((response) => toast.success(response.message || 'Email test OK'))
                     .catch((error) => toast.error(getErrorMessage(error, 'Email test failed')))
                 }}
-                className="rounded-md border border-line px-4 py-2.5 text-sm font-medium"
+                className="min-h-11 w-full rounded-md border border-line px-4 py-2.5 text-sm font-medium sm:w-auto"
               >
                 Test connection
               </button>
@@ -470,7 +474,7 @@ export const SettingsPanel = () => {
               onClick={() => {
                 void handleSaveSecurity()
               }}
-              className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+              className="min-h-11 w-full rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
             >
               Save security settings
             </button>
@@ -517,7 +521,7 @@ export const SettingsPanel = () => {
               onClick={() => {
                 void handleSaveRateLimits()
               }}
-              className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+              className="min-h-11 w-full rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
             >
               Save rate limits
             </button>
@@ -747,7 +751,7 @@ export const SettingsPanel = () => {
               onClick={() => {
                 void handleSaveStorage()
               }}
-              className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+              className="min-h-11 w-full rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
             >
               Save storage settings
             </button>
@@ -835,14 +839,14 @@ export const SettingsPanel = () => {
                 />
               </Field>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <button
                 type="button"
                 disabled={saving}
                 onClick={() => {
                   void handleSaveOAuth()
                 }}
-                className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                className="min-h-11 w-full rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
               >
                 Save OAuth settings
               </button>
@@ -854,7 +858,7 @@ export const SettingsPanel = () => {
                     .then((response) => toast.success(response.message || 'OAuth config OK'))
                     .catch((error) => toast.error(getErrorMessage(error, 'OAuth test failed')))
                 }}
-                className="rounded-md border border-line px-4 py-2.5 text-sm font-medium"
+                className="min-h-11 w-full rounded-md border border-line px-4 py-2.5 text-sm font-medium sm:w-auto"
               >
                 Validate config
               </button>

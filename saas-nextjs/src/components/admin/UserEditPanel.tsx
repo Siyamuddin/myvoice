@@ -56,10 +56,10 @@ export const UserEditPanel = ({ userId }: Props) => {
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div>
-        <h1 className="font-display text-4xl text-ink">Edit user</h1>
-        <p className="mt-2 text-ink-soft">Update profile fields for this account.</p>
+        <h1 className="font-display text-3xl text-ink sm:text-4xl">Edit user</h1>
+        <p className="mt-2 text-sm text-ink-soft sm:text-base">Update profile fields for this account.</p>
       </div>
-      <div className="glass-panel space-y-4 rounded-2xl p-6">
+      <div className="glass-panel space-y-4 rounded-2xl p-4 sm:p-6">
         {(['name', 'email', 'about'] as const).map((field) => (
           <div key={field}>
             <label htmlFor={field} className="mb-1.5 block text-sm font-medium capitalize">
@@ -89,12 +89,12 @@ export const UserEditPanel = ({ userId }: Props) => {
           onClick={() => {
             void handleSave()
           }}
-          className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+          className="min-h-11 w-full rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60 sm:w-auto"
         >
           {saving ? 'Saving…' : 'Save changes'}
         </button>
       </div>
-      <Link href={`/admin/users/${userId}`} className="text-sm font-semibold text-teal">
+      <Link href={`/admin/users/${userId}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-teal" tabIndex={0}>
         ← Cancel
       </Link>
     </div>

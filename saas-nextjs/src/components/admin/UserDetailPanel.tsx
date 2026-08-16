@@ -31,31 +31,32 @@ export const UserDetailPanel = ({ userId }: Props) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-4xl text-ink">{user.name}</h1>
-          <p className="mt-2 text-ink-soft">{user.email}</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-display text-3xl text-ink sm:text-4xl">{user.name}</h1>
+          <p className="mt-2 break-all text-sm text-ink-soft sm:text-base">{user.email}</p>
         </div>
         <Link
           href={`/admin/users/${user.id}/edit`}
-          className="rounded-md bg-teal px-4 py-2 text-sm font-semibold text-white"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-teal px-4 py-2 text-sm font-semibold text-white"
+          tabIndex={0}
         >
           Edit
         </Link>
       </div>
-      <div className="glass-panel space-y-3 rounded-2xl p-6">
+      <div className="glass-panel space-y-3 rounded-2xl p-4 sm:p-6">
         <p>
           <span className="text-ink-soft">ID:</span> {user.id}
         </p>
-        <p>
+        <p className="break-words">
           <span className="text-ink-soft">About:</span> {user.about || '—'}
         </p>
-        <p>
+        <p className="break-words">
           <span className="text-ink-soft">Roles:</span>{' '}
           {user.roles?.map((role) => role.name).join(', ') || '—'}
         </p>
       </div>
-      <Link href="/admin/users" className="text-sm font-semibold text-teal">
+      <Link href="/admin/users" className="inline-flex min-h-11 items-center text-sm font-semibold text-teal" tabIndex={0}>
         ← Back to users
       </Link>
     </div>

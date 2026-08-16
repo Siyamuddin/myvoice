@@ -61,8 +61,8 @@ export const UserManagementPanel = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-4xl text-ink">Users</h1>
-        <p className="mt-2 text-ink-soft">Search and manage accounts.</p>
+        <h1 className="font-display text-3xl text-ink sm:text-4xl">Users</h1>
+        <p className="mt-2 text-sm text-ink-soft sm:text-base">Search and manage accounts.</p>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row">
@@ -81,69 +81,111 @@ export const UserManagementPanel = () => {
           onClick={() => {
             void handleSearch()
           }}
-          className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white"
+          className="min-h-11 shrink-0 rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white"
         >
           Search
         </button>
       </div>
 
-      <div className="glass-panel overflow-x-auto rounded-2xl p-4">
+      <div className="glass-panel rounded-2xl p-3 sm:p-4">
         {loading ? (
           <p className="p-4 text-ink-soft">Loading…</p>
         ) : rows.length === 0 ? (
           <p className="p-4 text-ink-soft">No users found.</p>
         ) : (
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-line text-ink-soft">
-              <tr>
-                <th className="py-2 pr-4 font-medium">Name</th>
-                <th className="py-2 pr-4 font-medium">Email</th>
-                <th className="py-2 pr-4 font-medium">Roles</th>
-                <th className="py-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <ul className="space-y-3 md:hidden" aria-label="Users">
               {rows.map((user) => (
-                <tr key={user.id} className="border-b border-line/60">
-                  <td className="py-3 pr-4 font-medium text-ink">{user.name}</td>
-                  <td className="py-3 pr-4 text-ink-soft">{user.email}</td>
-                  <td className="py-3 pr-4 text-ink-soft">
+                <li key={user.id} className="rounded-xl border border-line/70 bg-white/50 p-4">
+                  <p className="font-medium text-ink">{user.name}</p>
+                  <p className="mt-1 break-all text-sm text-ink-soft">{user.email}</p>
+                  <p className="mt-1 text-xs text-ink-soft">
                     {user.roles?.map((role) => role.name.replace('ROLE_', '')).join(', ') || '—'}
-                  </td>
-                  <td className="py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Link href={`/admin/users/${user.id}`} className="text-teal hover:underline">
-                        View
-                      </Link>
-                      <Link href={`/admin/users/${user.id}/edit`} className="text-teal hover:underline">
-                        Edit
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleDelete(user)
-                        }}
-                        className="text-danger hover:underline"
-                        aria-label={`Delete ${user.email}`}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link
+                      href={`/admin/users/${user.id}`}
+                      className="inline-flex min-h-11 items-center rounded-md border border-line px-3 text-sm font-medium text-teal"
+                      tabIndex={0}
+                    >
+                      View
+                    </Link>
+                    <Link
+                      href={`/admin/users/${user.id}/edit`}
+                      className="inline-flex min-h-11 items-center rounded-md border border-line px-3 text-sm font-medium text-teal"
+                      tabIndex={0}
+                    >
+                      Edit
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleDelete(user)
+                      }}
+                      className="inline-flex min-h-11 items-center rounded-md border border-danger/30 px-3 text-sm font-medium text-danger"
+                      aria-label={`Delete ${user.email}`}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
               ))}
-            </tbody>
-          </table>
+            </ul>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-line text-ink-soft">
+                  <tr>
+                    <th className="py-2 pr-4 font-medium">Name</th>
+                    <th className="py-2 pr-4 font-medium">Email</th>
+                    <th className="py-2 pr-4 font-medium">Roles</th>
+                    <th className="py-2 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((user) => (
+                    <tr key={user.id} className="border-b border-line/60">
+                      <td className="py-3 pr-4 font-medium text-ink">{user.name}</td>
+                      <td className="py-3 pr-4 text-ink-soft">{user.email}</td>
+                      <td className="py-3 pr-4 text-ink-soft">
+                        {user.roles?.map((role) => role.name.replace('ROLE_', '')).join(', ') || '—'}
+                      </td>
+                      <td className="py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <Link href={`/admin/users/${user.id}`} className="text-teal hover:underline">
+                            View
+                          </Link>
+                          <Link href={`/admin/users/${user.id}/edit`} className="text-teal hover:underline">
+                            Edit
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleDelete(user)
+                            }}
+                            className="text-danger hover:underline"
+                            aria-label={`Delete ${user.email}`}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
       {!searchResults && data && data.totalPages > 1 && (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             disabled={page <= 0}
             onClick={() => setPage((value) => Math.max(0, value - 1))}
-            className="rounded-md border border-line px-3 py-2 text-sm disabled:opacity-40"
+            className="min-h-11 rounded-md border border-line px-3 py-2 text-sm disabled:opacity-40"
           >
             Previous
           </button>
@@ -154,7 +196,7 @@ export const UserManagementPanel = () => {
             type="button"
             disabled={page >= data.totalPages - 1}
             onClick={() => setPage((value) => value + 1)}
-            className="rounded-md border border-line px-3 py-2 text-sm disabled:opacity-40"
+            className="min-h-11 rounded-md border border-line px-3 py-2 text-sm disabled:opacity-40"
           >
             Next
           </button>

@@ -13,7 +13,7 @@ export const AppLogo = ({ href = '/', tone = 'dark', className = '' }: AppLogoPr
   return (
     <Link
       href={href}
-      className={`inline-flex items-baseline gap-1 font-display text-3xl tracking-tight ${color} ${className}`}
+      className={`inline-flex items-baseline gap-1 font-display text-2xl tracking-tight sm:text-3xl ${color} ${className}`}
       aria-label={`${APP_NAME} home`}
       tabIndex={0}
     >

@@ -37,10 +37,10 @@ export const SessionsPanel = () => {
 
   return (
     <div className="mx-auto w-full max-w-2xl">
-      <h1 className="font-display text-4xl text-ink">Sessions</h1>
-      <p className="mt-2 text-ink-soft">Review and revoke active sign-ins.</p>
+      <h1 className="font-display text-3xl text-ink sm:text-4xl">Sessions</h1>
+      <p className="mt-2 text-sm text-ink-soft sm:text-base">Review and revoke active sign-ins.</p>
 
-      <div className="mt-8 space-y-3">
+      <div className="mt-6 space-y-3 sm:mt-8">
         {loading && <p className="text-ink-soft">Loading…</p>}
         {!loading && sessions.length === 0 && (
           <p className="text-ink-soft">No active sessions found.</p>
@@ -50,9 +50,9 @@ export const SessionsPanel = () => {
             key={session.sessionId}
             className="glass-panel flex flex-col gap-3 rounded-xl p-4 sm:flex-row sm:items-center sm:justify-between"
           >
-            <div>
+            <div className="min-w-0">
               <p className="font-medium text-ink">{session.ipAddress || 'Unknown IP'}</p>
-              <p className="mt-1 text-sm text-ink-soft">
+              <p className="mt-1 break-words text-sm text-ink-soft">
                 {session.userAgent || 'Unknown device'} · signed in{' '}
                 {new Date(session.loginTime).toLocaleString()}
               </p>
@@ -62,7 +62,7 @@ export const SessionsPanel = () => {
               onClick={() => {
                 void handleRevoke(session.sessionId)
               }}
-              className="rounded-md border border-danger/30 px-3 py-2 text-sm font-medium text-danger"
+              className="min-h-11 w-full shrink-0 rounded-md border border-danger/30 px-3 py-2 text-sm font-medium text-danger sm:w-auto"
               aria-label={`Revoke session ${session.sessionId}`}
             >
               Revoke
