@@ -26,10 +26,12 @@ jobs:
           ./mvnw -ntp test
 
       - name: Frontend build
-        working-directory: saas-reactjs
+        working-directory: saas-nextjs
         run: |
           npm ci
+          npm run type-check
           npm run build
+          npm test
 
   deploy:
     name: Deploy (docker compose on Mac)

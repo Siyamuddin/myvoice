@@ -8,6 +8,7 @@ RUN chmod +x mvnw && ./mvnw -ntp -DskipTests clean package
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-COPY --from=build /app/target/saas-starter-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=build /app/target/myvoice-0.0.1-SNAPSHOT.jar app.jar
 EXPOSE 9090
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+ENV JAVA_OPTS=""
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]

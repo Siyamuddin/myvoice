@@ -48,6 +48,9 @@ class VoiceWebSocketHandlerTest {
     private CustomUserDetailService customUserDetailService;
 
     @Mock
+    private VoiceUsageService voiceUsageService;
+
+    @Mock
     private WebSocketSession session;
 
     private VoiceProperties voiceProperties;
@@ -60,9 +63,12 @@ class VoiceWebSocketHandlerTest {
 
         voiceProperties = new VoiceProperties();
         voiceProperties.setGeminiApiKey("AIzaSyTestKey");
-        voiceProperties.setGeminiModel("gemini-live-2.5-flash-native-audio");
+        voiceProperties.setGeminiModel("gemini-2.5-flash-native-audio-latest");
         voiceProperties.setSystemPrompt("You are a helpful AI assistant.");
         voiceProperties.setMaxSessionsPerUser(1);
+        voiceProperties.setMaxSessionDurationSeconds(600);
+        voiceProperties.setMaxDailyMinutesPerUser(30);
+        voiceProperties.setMaxGlobalSessions(50);
 
         user = new User();
         user.setId(11);
@@ -74,6 +80,11 @@ class VoiceWebSocketHandlerTest {
         attributes.put("username", "voice@test.com");
         attributes.put("userId", 11);
         attributes.put("user", user);
+
+        org.mockito.Mockito.lenient().when(voiceUsageService.hasDailyQuota(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(voiceUsageService.tryAcquireGlobalSlot()).thenReturn(true);
+        org.mockito.Mockito.lenient().when(voiceUsageService.maxSessionDurationSeconds()).thenReturn(600);
+        org.mockito.Mockito.lenient().when(voiceUsageService.remainingDailySeconds(org.mockito.ArgumentMatchers.anyString())).thenReturn(1800L);
     }
 
     @AfterEach
@@ -241,6 +252,7 @@ class VoiceWebSocketHandlerTest {
                 auditService,
                 customUserDetailService,
                 MAPPER,
+                voiceUsageService,
                 supplier);
     }
 }

@@ -21,6 +21,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -34,7 +38,13 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
     private final AuditService auditService;
     private final CustomUserDetailService customUserDetailService;
     private final ObjectMapper objectMapper;
+    private final VoiceUsageService voiceUsageService;
     private final Supplier<GeminiLiveClient> clientFactory;
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "voice-session-watchdog");
+        t.setDaemon(true);
+        return t;
+    });
 
     private final ConcurrentHashMap<String, VoiceSessionHolder> sessions = new ConcurrentHashMap<>();
 
@@ -44,8 +54,9 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
             RateLimitService rateLimitService,
             AuditService auditService,
             CustomUserDetailService customUserDetailService,
-            ObjectMapper objectMapper) {
-        this(voiceProperties, rateLimitService, auditService, customUserDetailService, objectMapper, null);
+            ObjectMapper objectMapper,
+            VoiceUsageService voiceUsageService) {
+        this(voiceProperties, rateLimitService, auditService, customUserDetailService, objectMapper, voiceUsageService, null);
     }
 
     VoiceWebSocketHandler(
@@ -54,12 +65,14 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
             AuditService auditService,
             CustomUserDetailService customUserDetailService,
             ObjectMapper objectMapper,
+            VoiceUsageService voiceUsageService,
             Supplier<GeminiLiveClient> clientFactory) {
         this.voiceProperties = voiceProperties;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
         this.customUserDetailService = customUserDetailService;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+        this.voiceUsageService = voiceUsageService;
         this.clientFactory = clientFactory != null
                 ? clientFactory
                 : () -> createClient(this.voiceProperties);
@@ -95,33 +108,73 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        if (!rateLimitService.tryConsumeGeneralApi("voice:" + username)) {
-            sendError(session, "RATE_LIMITED", null);
+        if (!voiceUsageService.hasDailyQuota(username)) {
+            sendError(session, "USAGE_LIMIT", "Daily free-beta voice minutes exhausted");
             session.close(CloseStatus.NORMAL);
             return;
         }
 
-        if (!tryAcquireSession(username)) {
-            sendError(session, "SESSION_LIMIT", null);
+        if (!voiceUsageService.tryAcquireGlobalSlot()) {
+            sendError(session, "GLOBAL_CAPACITY", "Voice service is at capacity");
             session.close(CloseStatus.NORMAL);
             return;
         }
 
+        boolean sessionAcquired = false;
+        boolean globalHeld = true;
         try {
+            if (!rateLimitService.tryConsumeGeneralApi("voice:" + username)) {
+                sendError(session, "RATE_LIMITED", null);
+                session.close(CloseStatus.NORMAL);
+                return;
+            }
+
+            if (!tryAcquireSession(username)) {
+                sendError(session, "SESSION_LIMIT", null);
+                session.close(CloseStatus.NORMAL);
+                return;
+            }
+            sessionAcquired = true;
+
             GeminiLiveClient client = clientFactory.get();
             VoiceListener listener = createListener(session);
             client.connect(listener);
 
-            sessions.put(session.getId(), new VoiceSessionHolder(username, userId, user, client, listener));
+            long startedAtMs = System.currentTimeMillis();
+            long maxDurationSeconds = Math.min(
+                    voiceUsageService.maxSessionDurationSeconds(),
+                    Math.max(1, voiceUsageService.remainingDailySeconds(username)));
+
+            ScheduledFuture<?> timeoutFuture = scheduler.schedule(() -> {
+                sendError(session, "SESSION_DURATION_LIMIT", "Free-beta session time limit reached");
+                try {
+                    if (session.isOpen()) {
+                        session.close(CloseStatus.NORMAL);
+                    }
+                } catch (IOException e) {
+                    log.debug("Failed to close voice session after duration limit", e);
+                }
+            }, maxDurationSeconds, TimeUnit.SECONDS);
+
+            sessions.put(
+                    session.getId(),
+                    new VoiceSessionHolder(username, userId, user, client, listener, startedAtMs, timeoutFuture, true));
+            globalHeld = false;
 
             if (user != null) {
                 auditService.logSecurityEvent(user, "VOICE_SESSION_START", true);
             }
         } catch (Exception e) {
             log.error("Failed to establish Gemini Live session for user {}", username, e);
-            releaseSession(username);
+            if (sessionAcquired) {
+                releaseSession(username);
+            }
             sendError(session, "GEMINI_CONNECT_FAILED", e.getMessage());
             session.close(CloseStatus.SERVER_ERROR);
+        } finally {
+            if (globalHeld) {
+                voiceUsageService.releaseGlobalSlot();
+            }
         }
     }
 
@@ -173,7 +226,19 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
         if (holder == null) {
             return;
         }
+
+        if (holder.timeoutFuture() != null) {
+            holder.timeoutFuture().cancel(false);
+        }
+
+        long elapsedSeconds = Math.max(1, (System.currentTimeMillis() - holder.startedAtMs()) / 1000L);
+        voiceUsageService.recordSessionSeconds(holder.username(), elapsedSeconds);
+
         releaseSession(holder.username());
+        if (holder.heldGlobalSlot()) {
+            voiceUsageService.releaseGlobalSlot();
+        }
+
         try {
             if (holder.client() != null) {
                 holder.client().close();
@@ -319,6 +384,9 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
             Integer userId,
             User user,
             GeminiLiveClient client,
-            VoiceListener listener) {
+            VoiceListener listener,
+            long startedAtMs,
+            ScheduledFuture<?> timeoutFuture,
+            boolean heldGlobalSlot) {
     }
 }

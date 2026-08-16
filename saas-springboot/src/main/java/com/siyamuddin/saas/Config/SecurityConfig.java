@@ -50,10 +50,7 @@ public class SecurityConfig {
     };
 
     private static final String[] ACTUATOR_PUBLIC_URLS = {
-            "/actuator/health",
-            "/actuator/info",
-            "/actuator/metrics",
-            "/actuator/prometheus"
+            "/actuator/health"
     };
 
     private static final String[] SWAGGER_URLS = {

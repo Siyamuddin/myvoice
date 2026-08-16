@@ -70,6 +70,7 @@ public class AdminController {
             description = "User not found"
         )
     })
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/{userId}")
     public ResponseEntity<UserDto> getUser(
             @Parameter(description = "User ID", required = true)
@@ -90,6 +91,7 @@ public class AdminController {
             content = @Content(schema = @Schema(implementation = PagedResponse.class))
         )
     })
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/")
     public ResponseEntity<PagedResponse<UserDto>> getAllUser(
             @Parameter(description = "Page number (0-indexed)", example = "0")
@@ -109,6 +111,7 @@ public class AdminController {
         summary = "Search users by name",
         description = "Search users by name containing the provided keywords. Requires admin role."
     )
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     @GetMapping("/search/{keywords}")
     public ResponseEntity<List<UserDto>> searchUserByName(
             @Parameter(description = "Search keywords", required = true)

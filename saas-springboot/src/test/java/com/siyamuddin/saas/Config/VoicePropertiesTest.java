@@ -17,9 +17,12 @@ class VoicePropertiesTest {
     void defaultsAreSet() {
         VoiceProperties properties = new VoiceProperties();
 
-        assertThat(properties.getGeminiModel()).isEqualTo("gemini-live-2.5-flash-native-audio");
-        assertThat(properties.getSystemPrompt()).isEqualTo("You are a helpful AI assistant.");
+        assertThat(properties.getGeminiModel()).isEqualTo("gemini-2.5-flash-native-audio-latest");
+        assertThat(properties.getSystemPrompt()).contains("English, Bangla, and Korean");
         assertThat(properties.getMaxSessionsPerUser()).isEqualTo(1);
+        assertThat(properties.getMaxSessionDurationSeconds()).isEqualTo(600);
+        assertThat(properties.getMaxDailyMinutesPerUser()).isEqualTo(30);
+        assertThat(properties.getMaxGlobalSessions()).isEqualTo(50);
         assertThat(properties.getGeminiApiKey()).isNull();
     }
 
