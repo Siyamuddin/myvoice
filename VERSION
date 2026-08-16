@@ -1,0 +1,3 @@
+# myvoice deploy version
+# Bumped by CI/CD pipeline on each successful deploy.
+DEPLOY_VERSION=1
