@@ -45,7 +45,8 @@ public class SecurityConfig {
             "/api/v1/auth/oauth/enabled",
             "/api/v1/auth/oauth/google/authorize",
             "/api/v1/auth/oauth/google/callback",
-            "/uploads/public/**"
+            "/uploads/public/**",
+            "/ws/**" // WebSocket handshake — auth enforced by JwtHandshakeInterceptor at handshake time
     };
 
     private static final String[] ACTUATOR_PUBLIC_URLS = {
@@ -101,7 +102,7 @@ public class SecurityConfig {
                                         "style-src 'self' 'unsafe-inline'; " +
                                         "img-src 'self' data: https:; " +
                                         "font-src 'self' data:; " +
-                                        "connect-src 'self'; " +
+                                        "connect-src 'self' ws: wss:; " +
                                         "frame-ancestors 'none'; " +
                                         "base-uri 'self'; " +
                                         "form-action 'self'")

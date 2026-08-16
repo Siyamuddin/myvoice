@@ -39,3 +39,6 @@ Thumbs.db
 
 # Maven
 
+
+# Hermes agent workspace
+.hermes/

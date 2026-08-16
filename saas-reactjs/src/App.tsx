@@ -83,6 +83,9 @@ const ChangePasswordPage = lazy(() =>
 const SessionsPage = lazy(() =>
   import('./pages/users/SessionsPage').then((m) => ({ default: m.SessionsPage }))
 );
+const VoiceAgentPage = lazy(() =>
+  import('./pages/voice/VoiceAgentPage').then((m) => ({ default: m.VoiceAgentPage }))
+);
 
 // OAuth Callback
 const OAuthCallbackPage = lazy(() =>
@@ -182,6 +185,7 @@ const router = createBrowserRouter([
               { path: 'profile', element: <ProfilePage /> },
               { path: 'change-password', element: <ChangePasswordPage /> },
               { path: 'sessions', element: <SessionsPage /> },
+              { path: 'voice', element: <VoiceAgentPage /> },
               { path: '*', element: <Navigate to="/dashboard" replace /> },
             ],
           },

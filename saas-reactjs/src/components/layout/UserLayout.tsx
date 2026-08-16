@@ -26,6 +26,12 @@ export function UserLayout() {
                 >
                   Sessions
                 </Link>
+                <Link
+                  to="/voice"
+                  className="px-3 py-2 text-gray-300 hover:text-white transition-colors font-medium"
+                >
+                  Voice Agent
+                </Link>
               </div>
             </div>
             <div className="flex items-center space-x-4">

@@ -1,0 +1,324 @@
+package com.siyamuddin.saas.Services.Voice;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.siyamuddin.saas.Config.Properties.VoiceProperties;
+import com.siyamuddin.saas.Entity.User;
+import com.siyamuddin.saas.Services.AuditService;
+import com.siyamuddin.saas.Services.CustomUserDetailService;
+import com.siyamuddin.saas.Services.RateLimitService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.springframework.web.socket.BinaryMessage;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
+
+@Slf4j
+@Component
+public class VoiceWebSocketHandler extends TextWebSocketHandler {
+
+    private static final ConcurrentHashMap<String, Integer> ACTIVE_SESSIONS = new ConcurrentHashMap<>();
+
+    private final VoiceProperties voiceProperties;
+    private final RateLimitService rateLimitService;
+    private final AuditService auditService;
+    private final CustomUserDetailService customUserDetailService;
+    private final ObjectMapper objectMapper;
+    private final Supplier<GeminiLiveClient> clientFactory;
+
+    private final ConcurrentHashMap<String, VoiceSessionHolder> sessions = new ConcurrentHashMap<>();
+
+    @Autowired
+    public VoiceWebSocketHandler(
+            VoiceProperties voiceProperties,
+            RateLimitService rateLimitService,
+            AuditService auditService,
+            CustomUserDetailService customUserDetailService,
+            ObjectMapper objectMapper) {
+        this(voiceProperties, rateLimitService, auditService, customUserDetailService, objectMapper, null);
+    }
+
+    VoiceWebSocketHandler(
+            VoiceProperties voiceProperties,
+            RateLimitService rateLimitService,
+            AuditService auditService,
+            CustomUserDetailService customUserDetailService,
+            ObjectMapper objectMapper,
+            Supplier<GeminiLiveClient> clientFactory) {
+        this.voiceProperties = voiceProperties;
+        this.rateLimitService = rateLimitService;
+        this.auditService = auditService;
+        this.customUserDetailService = customUserDetailService;
+        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+        this.clientFactory = clientFactory != null
+                ? clientFactory
+                : () -> createClient(this.voiceProperties);
+    }
+
+    GeminiLiveClient createClient(VoiceProperties props) {
+        return new GeminiLiveClient(
+                props.getGeminiApiKey(),
+                props.getGeminiModel(),
+                props.getSystemPrompt());
+    }
+
+    static void clearActiveSessionCounts() {
+        ACTIVE_SESSIONS.clear();
+    }
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        String username = (String) session.getAttributes().get("username");
+        Integer userId = (Integer) session.getAttributes().get("userId");
+        User user = resolveUser(session, username);
+
+        String apiKey = voiceProperties.getGeminiApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            sendError(session, "VOICE_DISABLED", null);
+            session.close(CloseStatus.NORMAL);
+            return;
+        }
+
+        if (username == null || username.isBlank()) {
+            sendError(session, "UNAUTHORIZED", "Missing user on session");
+            session.close(CloseStatus.NOT_ACCEPTABLE);
+            return;
+        }
+
+        if (!rateLimitService.tryConsumeGeneralApi("voice:" + username)) {
+            sendError(session, "RATE_LIMITED", null);
+            session.close(CloseStatus.NORMAL);
+            return;
+        }
+
+        if (!tryAcquireSession(username)) {
+            sendError(session, "SESSION_LIMIT", null);
+            session.close(CloseStatus.NORMAL);
+            return;
+        }
+
+        try {
+            GeminiLiveClient client = clientFactory.get();
+            VoiceListener listener = createListener(session);
+            client.connect(listener);
+
+            sessions.put(session.getId(), new VoiceSessionHolder(username, userId, user, client, listener));
+
+            if (user != null) {
+                auditService.logSecurityEvent(user, "VOICE_SESSION_START", true);
+            }
+        } catch (Exception e) {
+            log.error("Failed to establish Gemini Live session for user {}", username, e);
+            releaseSession(username);
+            sendError(session, "GEMINI_CONNECT_FAILED", e.getMessage());
+            session.close(CloseStatus.SERVER_ERROR);
+        }
+    }
+
+    @Override
+    protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
+        VoiceSessionHolder holder = sessions.get(session.getId());
+        if (holder == null || holder.client() == null) {
+            return;
+        }
+        try {
+            ByteBuffer payload = message.getPayload();
+            byte[] pcm;
+            if (payload.hasArray() && payload.arrayOffset() == 0 && payload.remaining() == payload.array().length) {
+                pcm = payload.array();
+            } else {
+                pcm = new byte[payload.remaining()];
+                payload.asReadOnlyBuffer().get(pcm);
+            }
+            holder.client().sendAudio(pcm);
+        } catch (IllegalStateException e) {
+            sendError(session, "GEMINI_DISCONNECTED", null);
+        }
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        VoiceSessionHolder holder = sessions.get(session.getId());
+        JsonNode root = objectMapper.readTree(message.getPayload());
+        String type = root.path("type").asText();
+
+        if ("stop".equals(type)) {
+            if (holder != null && holder.client() != null) {
+                holder.client().close();
+            }
+            if (session.isOpen()) {
+                session.close(CloseStatus.NORMAL);
+            }
+            return;
+        }
+
+        if ("ping".equals(type)) {
+            sendJson(session, Map.of("type", "pong"));
+        }
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        VoiceSessionHolder holder = sessions.remove(session.getId());
+        if (holder == null) {
+            return;
+        }
+        releaseSession(holder.username());
+        try {
+            if (holder.client() != null) {
+                holder.client().close();
+            }
+        } catch (Exception e) {
+            log.debug("Error closing Gemini client on session end", e);
+        }
+        if (holder.user() != null) {
+            auditService.logSecurityEvent(holder.user(), "VOICE_SESSION_END", true);
+        }
+    }
+
+    private VoiceListener createListener(WebSocketSession session) {
+        return new VoiceListener() {
+            @Override
+            public void onAudio(byte[] pcm24k) {
+                sendBinary(session, pcm24k);
+            }
+
+            @Override
+            public void onUserTranscript(String text) {
+                sendJson(session, Map.of("type", "user_transcript", "text", text != null ? text : ""));
+            }
+
+            @Override
+            public void onAssistantTranscript(String text) {
+                sendJson(session, Map.of("type", "assistant_transcript", "text", text != null ? text : ""));
+            }
+
+            @Override
+            public void onInterrupted() {
+                sendJson(session, Map.of("type", "interrupted"));
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                log.warn("Gemini Live error for session {}: {}", session.getId(), t.toString());
+                String message = t.getMessage() != null ? t.getMessage() : t.toString();
+                sendJson(session, Map.of("type", "error", "message", message));
+            }
+
+            @Override
+            public void onClose() {
+                if (session.isOpen()) {
+                    try {
+                        session.close(CloseStatus.NORMAL);
+                    } catch (IOException e) {
+                        log.debug("Failed to close browser session after Gemini close", e);
+                    }
+                }
+            }
+        };
+    }
+
+    private User resolveUser(WebSocketSession session, String username) {
+        Object attr = session.getAttributes().get("user");
+        if (attr instanceof User user) {
+            return user;
+        }
+        if (username == null || username.isBlank()) {
+            return null;
+        }
+        try {
+            return (User) customUserDetailService.loadUserByUsername(username);
+        } catch (Exception e) {
+            log.debug("Could not load user {} for voice audit", username, e);
+            return null;
+        }
+    }
+
+    private boolean tryAcquireSession(String username) {
+        synchronized (ACTIVE_SESSIONS) {
+            int count = ACTIVE_SESSIONS.getOrDefault(username, 0);
+            if (count >= voiceProperties.getMaxSessionsPerUser()) {
+                return false;
+            }
+            ACTIVE_SESSIONS.put(username, count + 1);
+            return true;
+        }
+    }
+
+    private void releaseSession(String username) {
+        if (username == null) {
+            return;
+        }
+        synchronized (ACTIVE_SESSIONS) {
+            Integer count = ACTIVE_SESSIONS.get(username);
+            if (count == null) {
+                return;
+            }
+            if (count <= 1) {
+                ACTIVE_SESSIONS.remove(username);
+            } else {
+                ACTIVE_SESSIONS.put(username, count - 1);
+            }
+        }
+    }
+
+    private void sendError(WebSocketSession session, String code, String message) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("type", "error");
+        node.put("code", code);
+        if (message != null) {
+            node.put("message", message);
+        }
+        try {
+            sendRawText(session, objectMapper.writeValueAsString(node));
+        } catch (Exception e) {
+            log.debug("Failed to send error frame", e);
+        }
+    }
+
+    private void sendJson(WebSocketSession session, Map<String, ?> payload) {
+        try {
+            sendRawText(session, objectMapper.writeValueAsString(payload));
+        } catch (Exception e) {
+            log.debug("Failed to send JSON frame", e);
+        }
+    }
+
+    private void sendRawText(WebSocketSession session, String json) throws IOException {
+        synchronized (session) {
+            if (session.isOpen()) {
+                session.sendMessage(new TextMessage(json));
+            }
+        }
+    }
+
+    private void sendBinary(WebSocketSession session, byte[] pcm24k) {
+        try {
+            synchronized (session) {
+                if (session.isOpen()) {
+                    session.sendMessage(new BinaryMessage(pcm24k));
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Failed to send binary audio frame", e);
+        }
+    }
+
+    record VoiceSessionHolder(
+            String username,
+            Integer userId,
+            User user,
+            GeminiLiveClient client,
+            VoiceListener listener) {
+    }
+}
