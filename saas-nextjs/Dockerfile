@@ -1,5 +1,6 @@
 # Build Next.js standalone
-FROM node:22-alpine AS build
+# node:20-alpine matches prior Mac runner cache from the Vite app era.
+FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -8,7 +9,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # Runtime: Next.js server (internal)
-FROM node:22-alpine AS next
+FROM node:20-alpine AS next
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

@@ -1,12 +1,12 @@
-name: myvoice
+name: fullstack-saas
 
 services:
   db:
     image: mysql:8.0
-    container_name: myvoice-db
+    container_name: saas-db
     restart: unless-stopped
     networks:
-      - myvoice-net
+      - saas-net
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -22,10 +22,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: myvoice-redis
+    container_name: saas-redis
     restart: unless-stopped
     networks:
-      - myvoice-net
+      - saas-net
     ports:
       - "${REDIS_HOST_PORT:-6381}:6379"
     healthcheck:
@@ -38,7 +38,7 @@ services:
     build:
       context: ./saas-springboot
       dockerfile: Dockerfile
-    container_name: myvoice-app
+    container_name: saas-app
     restart: unless-stopped
     depends_on:
       db:
@@ -50,7 +50,7 @@ services:
     volumes:
       - ./uploads:/app/uploads
     networks:
-      - myvoice-net
+      - saas-net
     env_file:
       - .env
     environment:
@@ -88,12 +88,12 @@ services:
       context: ./saas-nextjs
       dockerfile: Dockerfile
       target: next
-    container_name: myvoice-next
+    container_name: saas-next
     restart: unless-stopped
     depends_on:
       - app
     networks:
-      - myvoice-net
+      - saas-net
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -104,7 +104,7 @@ services:
       context: ./saas-nextjs
       dockerfile: Dockerfile
       target: frontend
-    container_name: myvoice-frontend
+    container_name: saas-frontend
     restart: unless-stopped
     depends_on:
       - next
@@ -112,11 +112,11 @@ services:
     ports:
       - "${FRONTEND_PORT:-5174}:5173"
     networks:
-      - myvoice-net
+      - saas-net
 
 volumes:
   db_data:
 
 networks:
-  myvoice-net:
+  saas-net:
     driver: bridge

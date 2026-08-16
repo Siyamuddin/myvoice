@@ -3,13 +3,12 @@ name: Deploy to Mac (self-hosted)
 on:
   push:
     branches: [main]
-  pull_request:
-    types: [closed]
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  # One deploy at a time; do not cancel an in-flight deploy (Hub pulls are slow).
+  group: deploy-main
+  cancel-in-progress: false
 
 jobs:
   ci:
@@ -37,24 +36,33 @@ jobs:
     name: Deploy (docker compose on Mac)
     needs: ci
     runs-on: [self-hosted, mac, arm64]
+    env:
+      # Keep historical project name so existing volumes/networks stay attached.
+      COMPOSE_PROJECT_NAME: fullstack-saas
+      DEPLOY_MAX_ATTEMPTS: "5"
     steps:
-      # Reuse the battle-tested host deploy script (~/.hermes/scripts/myvoice-deploy.sh)
-      # which runs the CI gates + docker compose + health check + tailscale re-assert.
-      # FORCE=1 skips the "no changes" check so it deploys the triggering commit.
       - name: Sync host repo to triggering commit
         run: |
+          set -euo pipefail
           cd "$HOME/repos/myvoice"
           git fetch myvoice main --quiet
           git checkout --quiet "${{ github.sha }}" 2>/dev/null || \
-            git checkout --quiet -b deploy-$(date +%s) "${{ github.sha }}"
+            git checkout --quiet -B "deploy-${{ github.run_id }}" "${{ github.sha }}"
           echo "Host repo at: $(git rev-parse --short HEAD)"
 
-      - name: Run host deploy pipeline
+      - name: Deploy with retries (in-repo)
         run: |
-          FORCE=1 bash "$HOME/.hermes/scripts/myvoice-deploy.sh"
+          set -euo pipefail
+          cd "$HOME/repos/myvoice"
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh
 
       - name: Restore host repo to main
+        if: always()
         run: |
+          set -euo pipefail
           cd "$HOME/repos/myvoice"
+          git fetch myvoice main --quiet
           git checkout --quiet main
-          echo "Host repo restored to: $(git rev-parse --short main)"
+          git pull --ff-only myvoice main --quiet || true
+          echo "Host repo restored to: $(git rev-parse --short HEAD)"
