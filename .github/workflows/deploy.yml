@@ -1,0 +1,69 @@
+name: Deploy to Mac (self-hosted)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: CI (tests + build)
+    runs-on: [self-hosted, mac, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Backend tests
+        working-directory: saas-springboot
+        run: |
+          export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+          export PATH="$JAVA_HOME/bin:$PATH"
+          ./mvnw -ntp test
+
+      - name: Frontend build
+        working-directory: saas-reactjs
+        run: |
+          npm ci
+          npm run build
+
+  deploy:
+    name: Deploy (docker compose on Mac)
+    needs: ci
+    runs-on: [self-hosted, mac, arm64]
+    steps:
+      # Deploy from the host repo (~/repos/myvoice) so the gitignored .env
+      # (Gemini key, JWT secret, DB creds) is present. Checkout the exact SHA
+      # that triggered this run, then rebuild + restart containers.
+      - name: Sync host repo to triggering commit
+        run: |
+          cd "$HOME/repos/myvoice"
+          git fetch myvoice main --quiet
+          git checkout --quiet "${{ github.sha }}" 2>/dev/null || \
+            git checkout --quiet -b deploy-$(date +%s) "${{ github.sha }}"
+          echo "Host repo at: $(git rev-parse --short HEAD)"
+
+      - name: Rebuild + restart containers
+        working-directory: /Users/uddinsiyam/repos/myvoice
+        run: docker compose up -d --build
+        env:
+          COMPOSE_PROJECT_NAME: fullstack-saas
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf -m 5 http://localhost:9090/actuator/health >/dev/null 2>&1; then
+              echo "Backend healthy"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "Backend failed health check" >&2
+          exit 1
+
+      - name: Re-assert Tailscale serve
+        run: sudo tailscale serve --bg http://localhost:5174 || true
