@@ -75,14 +75,14 @@ export const ProfilePanel = () => {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-10">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 sm:gap-10">
       <div>
-        <h1 className="font-display text-4xl text-ink">Profile</h1>
-        <p className="mt-2 text-ink-soft">{user?.email}</p>
+        <h1 className="font-display text-3xl text-ink sm:text-4xl">Profile</h1>
+        <p className="mt-2 break-all text-sm text-ink-soft sm:text-base">{user?.email}</p>
       </div>
 
-      <form onSubmit={onSaveProfile} className="glass-panel space-y-5 rounded-2xl p-6" noValidate>
-        <h2 className="font-display text-2xl text-ink">Details</h2>
+      <form onSubmit={onSaveProfile} className="glass-panel space-y-5 rounded-2xl p-4 sm:p-6" noValidate>
+        <h2 className="font-display text-xl text-ink sm:text-2xl">Details</h2>
         <div>
           <label htmlFor="name" className="mb-1.5 block text-sm font-medium">
             Name
@@ -110,7 +110,7 @@ export const ProfilePanel = () => {
         <button
           type="submit"
           disabled={profileForm.formState.isSubmitting}
-          className="rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white"
+          className="min-h-11 w-full rounded-md bg-teal px-4 py-2.5 text-sm font-semibold text-white sm:w-auto"
         >
           Save profile
         </button>
@@ -118,10 +118,10 @@ export const ProfilePanel = () => {
 
       <form
         onSubmit={onChangePassword}
-        className="glass-panel space-y-5 rounded-2xl p-6"
+        className="glass-panel space-y-5 rounded-2xl p-4 sm:p-6"
         noValidate
       >
-        <h2 className="font-display text-2xl text-ink">Password</h2>
+        <h2 className="font-display text-xl text-ink sm:text-2xl">Password</h2>
         <div>
           <label htmlFor="currentPassword" className="mb-1.5 block text-sm font-medium">
             Current password
@@ -152,7 +152,7 @@ export const ProfilePanel = () => {
         <button
           type="submit"
           disabled={passwordForm.formState.isSubmitting}
-          className="rounded-md border border-line px-4 py-2.5 text-sm font-semibold text-ink"
+          className="min-h-11 w-full rounded-md border border-line px-4 py-2.5 text-sm font-semibold text-ink sm:w-auto"
         >
           Change password
         </button>

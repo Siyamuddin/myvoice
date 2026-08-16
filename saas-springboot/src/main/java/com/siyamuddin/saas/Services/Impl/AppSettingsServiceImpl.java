@@ -53,6 +53,7 @@ public class AppSettingsServiceImpl implements AppSettingsService {
         response.setRateLimits(mapToRateLimitSettings());
         response.setFileStorage(mapToFileStorageSettings());
         response.setOauth(mapToOAuthSettings());
+        response.setVoice(mapToVoiceSettings());
         
         return response;
     }
@@ -199,6 +200,30 @@ public class AppSettingsServiceImpl implements AppSettingsService {
         auditAdminAction(adminUserId, "UPDATE_OAUTH_SETTINGS");
         
         return mapToOAuthSettings();
+    }
+
+    @Override
+    @Transactional
+    public VoiceSettingsDto updateVoiceSettings(VoiceSettingsDto settings, Integer adminUserId) {
+        log.info("Updating voice settings by admin user: {}", adminUserId);
+
+        if (settings.getGeminiApiKey() != null
+                && !settings.getGeminiApiKey().equals(MASKED_VALUE)
+                && !settings.getGeminiApiKey().isBlank()) {
+            updateSetting("voice.geminiApiKey", settings.getGeminiApiKey(), AppSetting.SettingCategory.VOICE, adminUserId, true);
+        }
+
+        updateSetting("voice.geminiModel", settings.getGeminiModel(), AppSetting.SettingCategory.VOICE, adminUserId, false);
+        updateSetting("voice.systemPrompt", settings.getSystemPrompt(), AppSetting.SettingCategory.VOICE, adminUserId, false);
+        updateSetting("voice.maxSessionsPerUser", String.valueOf(settings.getMaxSessionsPerUser()), AppSetting.SettingCategory.VOICE, adminUserId, false);
+        updateSetting("voice.maxSessionDurationSeconds", String.valueOf(settings.getMaxSessionDurationSeconds()), AppSetting.SettingCategory.VOICE, adminUserId, false);
+        updateSetting("voice.maxDailyMinutesPerUser", String.valueOf(settings.getMaxDailyMinutesPerUser()), AppSetting.SettingCategory.VOICE, adminUserId, false);
+        updateSetting("voice.maxGlobalSessions", String.valueOf(settings.getMaxGlobalSessions()), AppSetting.SettingCategory.VOICE, adminUserId, false);
+
+        refreshConfiguration();
+        auditAdminAction(adminUserId, "UPDATE_VOICE_SETTINGS");
+
+        return mapToVoiceSettings();
     }
 
     @Override
@@ -443,6 +468,21 @@ public class AppSettingsServiceImpl implements AppSettingsService {
         dto.setRedirectUri(getSettingValue("oauth.google.redirectUri", "http://localhost:3000/oauth/callback"));
         dto.setAuthorizedDomains(getSettingValue("oauth.google.authorizedDomains", ""));
         dto.setScopes(getSettingValue("oauth.google.scopes", "openid,profile,email"));
+        return dto;
+    }
+
+    private VoiceSettingsDto mapToVoiceSettings() {
+        VoiceSettingsDto dto = new VoiceSettingsDto();
+        String storedKey = getSettingValue("voice.geminiApiKey", "");
+        dto.setGeminiApiKey(storedKey == null || storedKey.isBlank() ? "" : MASKED_VALUE);
+        dto.setGeminiModel(getSettingValue("voice.geminiModel", "gemini-2.5-flash-native-audio-latest"));
+        dto.setSystemPrompt(getSettingValue(
+                "voice.systemPrompt",
+                "You are a helpful AI assistant. You speak English, Bangla, and Korean naturally and switch to match the user's language. Be concise and conversational."));
+        dto.setMaxSessionsPerUser(Integer.parseInt(getSettingValue("voice.maxSessionsPerUser", "1")));
+        dto.setMaxSessionDurationSeconds(Integer.parseInt(getSettingValue("voice.maxSessionDurationSeconds", "600")));
+        dto.setMaxDailyMinutesPerUser(Integer.parseInt(getSettingValue("voice.maxDailyMinutesPerUser", "30")));
+        dto.setMaxGlobalSessions(Integer.parseInt(getSettingValue("voice.maxGlobalSessions", "50")));
         return dto;
     }
 

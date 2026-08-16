@@ -36,14 +36,15 @@ export const VerifyEmailPanel = () => {
 
   return (
     <div className="mx-auto w-full max-w-md">
-      <AppLogo className="mb-10" />
-      <h1 className="font-display text-4xl text-ink">Email verification</h1>
+      <AppLogo className="mb-8 sm:mb-10" />
+      <h1 className="font-display text-3xl text-ink sm:text-4xl">Email verification</h1>
       <p className={`mt-4 text-base ${status === 'error' ? 'text-danger' : 'text-ink-soft'}`}>
         {message}
       </p>
       <Link
         href="/login"
-        className="mt-8 inline-flex rounded-md bg-teal px-4 py-3 text-sm font-semibold text-white"
+        className="mt-8 inline-flex min-h-12 items-center rounded-md bg-teal px-4 py-3 text-sm font-semibold text-white"
+        tabIndex={0}
       >
         Go to sign in
       </Link>

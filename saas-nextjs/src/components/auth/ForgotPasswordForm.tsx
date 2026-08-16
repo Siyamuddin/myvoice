@@ -35,9 +35,9 @@ export const ForgotPasswordForm = () => {
 
   return (
     <div className="mx-auto w-full max-w-md">
-      <AppLogo className="mb-10" />
-      <h1 className="font-display text-4xl text-ink">Reset password</h1>
-      <p className="mt-2 text-ink-soft">We will email a reset link if that account exists.</p>
+      <AppLogo className="mb-8 sm:mb-10" />
+      <h1 className="font-display text-3xl text-ink sm:text-4xl">Reset password</h1>
+      <p className="mt-2 text-sm text-ink-soft sm:text-base">We will email a reset link if that account exists.</p>
 
       <form className="mt-8 space-y-5" onSubmit={onSubmit} noValidate>
         <div>
@@ -62,7 +62,7 @@ export const ForgotPasswordForm = () => {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-md bg-teal px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-bright disabled:opacity-60"
+          className="min-h-12 w-full rounded-md bg-teal px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-bright disabled:opacity-60"
         >
           {isSubmitting ? 'Sending…' : 'Send reset link'}
         </button>

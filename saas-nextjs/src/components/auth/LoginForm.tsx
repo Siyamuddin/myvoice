@@ -36,9 +36,9 @@ export const LoginForm = () => {
 
   return (
     <div className="mx-auto w-full max-w-md">
-      <AppLogo className="mb-10" />
-      <h1 className="font-display text-4xl text-ink">Sign in</h1>
-      <p className="mt-2 text-ink-soft">Continue to your free-beta voice sessions.</p>
+      <AppLogo className="mb-8 sm:mb-10" />
+      <h1 className="font-display text-3xl text-ink sm:text-4xl">Sign in</h1>
+      <p className="mt-2 text-sm text-ink-soft sm:text-base">Continue to your free-beta voice sessions.</p>
 
       <form className="mt-8 space-y-5" onSubmit={onSubmit} noValidate>
         <div>
@@ -88,7 +88,7 @@ export const LoginForm = () => {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-md bg-teal px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-bright disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+          className="min-h-12 w-full rounded-md bg-teal px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-bright disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal"
         >
           {isSubmitting ? 'Signing in…' : 'Sign in'}
         </button>

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Figtree, Newsreader } from 'next/font/google'
 import { Providers } from '@/components/Providers'
 import { APP_DESCRIPTION, APP_NAME } from '@/lib/config'
@@ -21,6 +21,18 @@ export const metadata: Metadata = {
     template: `%s · ${APP_NAME}`,
   },
   description: APP_DESCRIPTION,
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: APP_NAME,
+  },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#eef3f8',
 }
 
 export default function RootLayout({

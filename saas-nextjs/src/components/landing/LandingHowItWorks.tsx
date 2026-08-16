@@ -1,12 +1,12 @@
 export const LandingHowItWorks = () => {
   return (
-    <section className="mx-auto max-w-5xl px-4 py-20 sm:px-6 sm:py-28">
-      <h2 className="font-display text-3xl text-ink sm:text-4xl">One continuous voice loop</h2>
-      <p className="mt-3 max-w-2xl text-lg text-ink-soft">
+    <section className="mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-28">
+      <h2 className="font-display text-2xl text-ink sm:text-4xl">One continuous voice loop</h2>
+      <p className="mt-3 max-w-2xl text-base text-ink-soft sm:text-lg">
         Mic audio streams to Gemini Live over a secure WebSocket. You hear the reply as raw PCM —
         no STT → LLM → TTS chain slowing you down.
       </p>
-      <ol className="mt-12 grid gap-10 sm:grid-cols-3">
+      <ol className="mt-10 grid gap-8 sm:mt-12 sm:grid-cols-3 sm:gap-10">
         {[
           {
             step: '01',

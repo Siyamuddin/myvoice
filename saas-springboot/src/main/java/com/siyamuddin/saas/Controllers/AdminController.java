@@ -328,6 +328,20 @@ public class AdminController {
     }
 
     @Operation(
+        summary = "Update voice settings",
+        description = "Update Gemini Live / free-beta voice configuration. Admin only."
+    )
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PutMapping("/settings/voice")
+    public ResponseEntity<VoiceSettingsDto> updateVoiceSettings(
+            @Valid @RequestBody VoiceSettingsDto settings,
+            Authentication authentication) {
+        User admin = userService.getUserEntityByEmail(authentication.getName());
+        VoiceSettingsDto updated = appSettingsService.updateVoiceSettings(settings, admin.getId());
+        return ResponseEntity.ok(updated);
+    }
+
+    @Operation(
         summary = "Test email connection",
         description = "Test SMTP connection with provided settings. Admin only."
     )

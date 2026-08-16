@@ -213,21 +213,21 @@ export const VoiceStudio = () => {
     sessionState === 'reconnecting'
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 sm:gap-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
         <div className="animate-rise">
           <p className="text-sm font-semibold tracking-wide text-teal">Free beta</p>
-          <h1 className="mt-1 font-display text-4xl text-ink sm:text-5xl">Talk</h1>
-          <p className="mt-2 text-ink-soft">
+          <h1 className="mt-1 font-display text-3xl text-ink sm:text-5xl">Talk</h1>
+          <p className="mt-2 text-sm text-ink-soft sm:text-base">
             English, Bangla, or Korean — headphones recommended.
           </p>
         </div>
         <div
-          className={`inline-flex items-center gap-2 self-start rounded-md border px-3 py-1.5 text-sm font-medium animate-rise-delay ${statusTone(sessionState)}`}
+          className={`inline-flex max-w-full flex-wrap items-center gap-2 self-start rounded-md border px-3 py-2 text-sm font-medium animate-rise-delay ${statusTone(sessionState)}`}
           aria-live="polite"
         >
           <span
-            className={`h-2 w-2 rounded-full ${
+            className={`h-2 w-2 shrink-0 rounded-full ${
               sessionState === 'connected'
                 ? 'bg-ok'
                 : sessionState === 'error'
@@ -245,16 +245,18 @@ export const VoiceStudio = () => {
         </div>
       </div>
 
-      <div className="glass-panel animate-rise-delay-2 rounded-2xl p-5 sm:p-7">
+      <div className="glass-panel animate-rise-delay-2 flex min-h-[min(70dvh,calc(100dvh-14rem))] flex-col rounded-2xl p-4 sm:min-h-0 sm:p-7">
         <div
-          className="mb-8 max-h-80 min-h-[14rem] space-y-3 overflow-y-auto rounded-xl bg-white/50 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+          className="mb-5 min-h-[10rem] flex-1 space-y-3 overflow-y-auto overscroll-contain rounded-xl bg-white/50 p-3 sm:mb-8 sm:max-h-80 sm:min-h-[14rem] sm:p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal"
           tabIndex={0}
           role="log"
           aria-label="Conversation transcript"
           aria-live="polite"
         >
           {messages.length === 0 ? (
-            <p className="py-12 text-center text-ink-soft">Tap the mic and start talking…</p>
+            <p className="py-10 text-center text-sm text-ink-soft sm:py-12 sm:text-base">
+              Tap the mic and start talking…
+            </p>
           ) : (
             messages.map((message, index) => (
               <div
@@ -262,7 +264,7 @@ export const VoiceStudio = () => {
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                  className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[85%] sm:px-4 ${
                     message.role === 'user'
                       ? 'bg-teal text-white'
                       : 'bg-mist-deep/80 text-ink'
@@ -276,7 +278,7 @@ export const VoiceStudio = () => {
           <div ref={transcriptEndRef} />
         </div>
 
-        <div className="flex flex-col items-center gap-5">
+        <div className="flex flex-col items-center gap-4 sm:gap-5">
           <div className="relative">
             {recordingActive && (
               <span
@@ -292,7 +294,7 @@ export const VoiceStudio = () => {
               disabled={micDisabled}
               aria-label={recordingActive ? 'Stop recording' : 'Start recording'}
               aria-pressed={recordingActive}
-              className={`relative flex h-20 w-20 items-center justify-center rounded-full bg-teal text-white shadow-[0_12px_40px_var(--teal-glow)] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-bright focus-visible:ring-offset-2 focus-visible:ring-offset-foam disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`relative flex h-20 w-20 items-center justify-center rounded-full bg-teal text-white shadow-[0_12px_40px_var(--teal-glow)] transition active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-bright focus-visible:ring-offset-2 focus-visible:ring-offset-foam disabled:cursor-not-allowed disabled:opacity-50 sm:h-20 sm:w-20 ${
                 recordingActive ? 'scale-105' : 'hover:scale-105'
               }`}
             >
@@ -312,12 +314,12 @@ export const VoiceStudio = () => {
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="flex w-full max-w-xs flex-wrap items-center justify-center gap-3">
             {sessionActive && (
               <button
                 type="button"
                 onClick={handleEndSession}
-                className="rounded-md border border-danger/30 bg-danger/5 px-4 py-2 text-sm font-medium text-danger transition hover:bg-danger/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+                className="min-h-11 flex-1 rounded-md border border-danger/30 bg-danger/5 px-4 py-2.5 text-sm font-medium text-danger transition hover:bg-danger/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-danger sm:flex-none"
                 aria-label="End voice session"
               >
                 End
@@ -327,7 +329,7 @@ export const VoiceStudio = () => {
               <button
                 type="button"
                 onClick={handleRetry}
-                className="rounded-md border border-teal/30 bg-teal/5 px-4 py-2 text-sm font-medium text-teal transition hover:bg-teal/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+                className="min-h-11 flex-1 rounded-md border border-teal/30 bg-teal/5 px-4 py-2.5 text-sm font-medium text-teal transition hover:bg-teal/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal sm:flex-none"
                 aria-label="Retry voice connection"
               >
                 Retry
@@ -335,7 +337,7 @@ export const VoiceStudio = () => {
             )}
           </div>
 
-          <p className="text-center text-sm text-ink-soft">
+          <p className="px-2 text-center text-xs text-ink-soft sm:text-sm">
             Use headphones — speaker audio can echo into the mic.
           </p>
         </div>

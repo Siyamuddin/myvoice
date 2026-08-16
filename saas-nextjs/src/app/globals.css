@@ -17,6 +17,11 @@
   --foreground: var(--ink);
   --font-display: var(--font-newsreader);
   --font-sans: var(--font-figtree);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --bottom-nav-h: 4.25rem;
 }
 
 @theme inline {
@@ -43,17 +48,23 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
   color: var(--foreground);
   background:
     radial-gradient(1200px 700px at 12% -10%, rgba(20, 184, 166, 0.18), transparent 55%),
     radial-gradient(900px 500px at 90% 0%, rgba(36, 48, 68, 0.08), transparent 50%),
     linear-gradient(180deg, #eef3f8 0%, #f7fafc 48%, #e8eef5 100%);
   font-family: var(--font-sans), sans-serif;
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
 }
 
 ::selection {
@@ -63,6 +74,27 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+img,
+svg,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+button,
+[role="button"],
+a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+input,
+textarea,
+select {
+  font-size: 16px;
+  max-width: 100%;
 }
 
 @keyframes rise-in {
@@ -133,4 +165,44 @@ a {
   background: rgba(247, 250, 252, 0.72);
   border: 1px solid rgba(15, 118, 110, 0.14);
   backdrop-filter: blur(14px);
+}
+
+.safe-px {
+  padding-left: max(1rem, var(--safe-left));
+  padding-right: max(1rem, var(--safe-right));
+}
+
+.safe-pb {
+  padding-bottom: max(1rem, var(--safe-bottom));
+}
+
+.bottom-nav-pad {
+  padding-bottom: calc(var(--bottom-nav-h) + var(--safe-bottom) + 0.75rem);
+}
+
+.tab-scroller {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 0.25rem;
+}
+
+.tab-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .animate-rise,
+  .animate-rise-delay,
+  .animate-rise-delay-2,
+  .animate-float,
+  .animate-pulse-ring {
+    animation: none !important;
+  }
 }

@@ -13,5 +13,6 @@ public class AllSettingsResponse {
     private RateLimitSettingsDto rateLimits;
     private FileStorageSettingsDto fileStorage;
     private OAuthSettingsDto oauth;
+    private VoiceSettingsDto voice;
 }
 
