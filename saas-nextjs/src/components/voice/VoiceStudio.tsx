@@ -144,7 +144,13 @@ export const VoiceStudio = () => {
       return
     }
 
-    ensureContext()
+    // Unlock speaker playback inside the tap gesture before any await.
+    try {
+      await ensureContext()
+    } catch {
+      toast.error('Could not unlock browser audio. Tap again and allow sound.')
+      return
+    }
 
     if (sessionState !== 'connected') {
       connectSession()
