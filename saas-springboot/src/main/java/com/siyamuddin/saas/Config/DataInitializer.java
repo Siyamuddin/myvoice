@@ -192,6 +192,23 @@ public class DataInitializer implements ApplicationRunner {
         settings.add(createSetting("oauth.google.scopes", "openid,profile,email", AppSetting.SettingCategory.OAUTH, 
             "Comma-separated OAuth scopes", AppSetting.DataType.STRING, false));
 
+        // Voice / free-beta settings
+        settings.add(createSetting("voice.geminiApiKey", "", AppSetting.SettingCategory.VOICE,
+            "Gemini Live API key (encrypted)", AppSetting.DataType.STRING, true));
+        settings.add(createSetting("voice.geminiModel", "gemini-2.5-flash-native-audio-latest", AppSetting.SettingCategory.VOICE,
+            "Gemini Live model id", AppSetting.DataType.STRING, false));
+        settings.add(createSetting("voice.systemPrompt",
+            "You are a helpful AI assistant. You speak English, Bangla, and Korean naturally and switch to match the user's language. Be concise and conversational.",
+            AppSetting.SettingCategory.VOICE, "System prompt for the voice agent", AppSetting.DataType.STRING, false));
+        settings.add(createSetting("voice.maxSessionsPerUser", "1", AppSetting.SettingCategory.VOICE,
+            "Max concurrent voice sessions per user", AppSetting.DataType.INTEGER, false));
+        settings.add(createSetting("voice.maxSessionDurationSeconds", "600", AppSetting.SettingCategory.VOICE,
+            "Max seconds per voice session", AppSetting.DataType.INTEGER, false));
+        settings.add(createSetting("voice.maxDailyMinutesPerUser", "30", AppSetting.SettingCategory.VOICE,
+            "Max voice minutes per user per day", AppSetting.DataType.INTEGER, false));
+        settings.add(createSetting("voice.maxGlobalSessions", "50", AppSetting.SettingCategory.VOICE,
+            "Max concurrent voice sessions globally", AppSetting.DataType.INTEGER, false));
+
         // Save settings (idempotent - only creates if doesn't exist)
         int createdCount = 0;
         for (AppSetting setting : settings) {

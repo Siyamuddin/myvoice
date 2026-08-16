@@ -23,6 +23,7 @@ public interface AppSettingsService {
     RateLimitSettingsDto updateRateLimitSettings(RateLimitSettingsDto settings, Integer adminUserId);
     FileStorageSettingsDto updateFileStorageSettings(FileStorageSettingsDto settings, Integer adminUserId);
     OAuthSettingsDto updateOAuthSettings(OAuthSettingsDto settings, Integer adminUserId);
+    VoiceSettingsDto updateVoiceSettings(VoiceSettingsDto settings, Integer adminUserId);
     
     // Test connections
     boolean testEmailConnection(EmailSettingsDto settings);

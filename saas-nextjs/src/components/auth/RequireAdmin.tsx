@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { isAdmin } from '@/types'
 
-export default function AuthRedirectPage() {
+export const RequireAdmin = ({ children }: { children: React.ReactNode }) => {
   const { user, isAuthenticated, isLoading } = useAuth()
   const router = useRouter()
 
@@ -15,12 +15,22 @@ export default function AuthRedirectPage() {
       router.replace('/login')
       return
     }
-    router.replace(isAdmin(user) ? '/admin/dashboard' : '/voice')
+    if (!isAdmin(user)) {
+      router.replace('/voice')
+    }
   }, [isAuthenticated, isLoading, router, user])
 
-  return (
-    <div className="flex min-h-screen items-center justify-center text-ink-soft">
-      Redirecting…
-    </div>
-  )
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-ink-soft">
+        Loading…
+      </div>
+    )
+  }
+
+  if (!isAuthenticated || !isAdmin(user)) {
+    return null
+  }
+
+  return <>{children}</>
 }

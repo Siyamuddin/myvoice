@@ -80,9 +80,9 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
 
     GeminiLiveClient createClient(VoiceProperties props) {
         return new GeminiLiveClient(
-                props.getGeminiApiKey(),
-                props.getGeminiModel(),
-                props.getSystemPrompt());
+                voiceUsageService.resolveGeminiApiKey(),
+                voiceUsageService.resolveGeminiModel(),
+                voiceUsageService.resolveSystemPrompt());
     }
 
     static void clearActiveSessionCounts() {
@@ -95,7 +95,7 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
         Integer userId = (Integer) session.getAttributes().get("userId");
         User user = resolveUser(session, username);
 
-        String apiKey = voiceProperties.getGeminiApiKey();
+        String apiKey = voiceUsageService.resolveGeminiApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             sendError(session, "VOICE_DISABLED", null);
             session.close(CloseStatus.NORMAL);
@@ -312,7 +312,7 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
     private boolean tryAcquireSession(String username) {
         synchronized (ACTIVE_SESSIONS) {
             int count = ACTIVE_SESSIONS.getOrDefault(username, 0);
-            if (count >= voiceProperties.getMaxSessionsPerUser()) {
+            if (count >= voiceUsageService.maxSessionsPerUser()) {
                 return false;
             }
             ACTIVE_SESSIONS.put(username, count + 1);

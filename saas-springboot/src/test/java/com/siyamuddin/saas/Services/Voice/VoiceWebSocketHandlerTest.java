@@ -85,6 +85,10 @@ class VoiceWebSocketHandlerTest {
         org.mockito.Mockito.lenient().when(voiceUsageService.tryAcquireGlobalSlot()).thenReturn(true);
         org.mockito.Mockito.lenient().when(voiceUsageService.maxSessionDurationSeconds()).thenReturn(600);
         org.mockito.Mockito.lenient().when(voiceUsageService.remainingDailySeconds(org.mockito.ArgumentMatchers.anyString())).thenReturn(1800L);
+        org.mockito.Mockito.lenient().when(voiceUsageService.maxSessionsPerUser()).thenReturn(1);
+        org.mockito.Mockito.lenient().when(voiceUsageService.resolveGeminiApiKey()).thenReturn("AIzaSyTestKey");
+        org.mockito.Mockito.lenient().when(voiceUsageService.resolveGeminiModel()).thenReturn("gemini-2.5-flash-native-audio-latest");
+        org.mockito.Mockito.lenient().when(voiceUsageService.resolveSystemPrompt()).thenReturn("You are a helpful AI assistant.");
     }
 
     @AfterEach
@@ -164,9 +168,9 @@ class VoiceWebSocketHandlerTest {
 
     @Test
     void afterConnectionEstablishedBlankKeySendsVoiceDisabled() throws Exception {
-        voiceProperties.setGeminiApiKey("  ");
         when(session.getAttributes()).thenReturn(attributes);
         when(session.isOpen()).thenReturn(true);
+        when(voiceUsageService.resolveGeminiApiKey()).thenReturn("  ");
 
         GeminiLiveClient mockClient = mock(GeminiLiveClient.class);
         VoiceWebSocketHandler handler = newHandler(() -> mockClient);

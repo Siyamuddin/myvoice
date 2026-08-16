@@ -15,6 +15,7 @@ import { authApi, userApi } from '@/lib/auth-api'
 import { storage, type StoredUser } from '@/lib/storage'
 import type { JwtRequest, RegisterData, UserDto } from '@/types'
 import { getErrorMessage } from '@/lib/api'
+import { isAdmin } from '@/types'
 
 type AuthContextValue = {
   user: StoredUser | null
@@ -93,7 +94,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       storage.setUser(profile)
       setUser(profile)
-      router.push('/voice')
+      router.push(isAdmin(profile) ? '/admin/dashboard' : '/voice')
     },
     [router]
   )

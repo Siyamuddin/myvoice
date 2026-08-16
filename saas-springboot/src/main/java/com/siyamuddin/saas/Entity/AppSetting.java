@@ -70,7 +70,8 @@ public class AppSetting {
         SECURITY,
         RATE_LIMIT,
         FILE_STORAGE,
-        OAUTH
+        OAUTH,
+        VOICE
     }
 
     public enum DataType {

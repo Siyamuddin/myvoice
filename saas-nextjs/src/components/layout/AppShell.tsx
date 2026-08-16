@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { AppLogo } from './AppLogo'
+import { isAdmin } from '@/types'
 
 const NAV = [
   { href: '/voice', label: 'Talk' },
@@ -14,6 +15,7 @@ const NAV = [
 export const AppShell = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname()
   const { user, logout, isLoading } = useAuth()
+  const showAdmin = isAdmin(user)
 
   return (
     <div className="min-h-screen">
@@ -39,6 +41,16 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
                 </Link>
               )
             })}
+            {showAdmin && (
+              <Link
+                href="/admin/dashboard"
+                className="rounded-md px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-mist-deep/60 hover:text-ink"
+                tabIndex={0}
+                aria-label="Open admin dashboard"
+              >
+                Admin
+              </Link>
+            )}
           </nav>
           <div className="flex items-center gap-3">
             <span className="hidden max-w-[10rem] truncate text-sm text-ink-soft sm:inline">

@@ -1,6 +1,7 @@
 package com.siyamuddin.saas.Services.Voice;
 
 import com.siyamuddin.saas.Config.Properties.VoiceProperties;
+import com.siyamuddin.saas.Services.AppSettingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -10,19 +11,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * In-memory free-beta usage controls: daily minutes per user and global concurrency.
- * Suitable for single-instance MVP; move to Redis for multi-replica deployments.
+ * Caps prefer admin dashboard settings, then env/VoiceProperties defaults.
  */
 @Service
 @RequiredArgsConstructor
 public class VoiceUsageService {
 
     private final VoiceProperties voiceProperties;
+    private final AppSettingsService appSettingsService;
 
     private final ConcurrentHashMap<String, DailyUsage> dailyUsage = new ConcurrentHashMap<>();
     private final AtomicInteger globalActiveSessions = new AtomicInteger(0);
 
     public boolean tryAcquireGlobalSlot() {
-        int max = voiceProperties.getMaxGlobalSessions();
+        int max = maxGlobalSessions();
         while (true) {
             int current = globalActiveSessions.get();
             if (current >= max) {
@@ -40,7 +42,7 @@ public class VoiceUsageService {
 
     public boolean hasDailyQuota(String username) {
         DailyUsage usage = getTodayUsage(username);
-        return usage.secondsUsed() < voiceProperties.getMaxDailyMinutesPerUser() * 60L;
+        return usage.secondsUsed() < maxDailyMinutesPerUser() * 60L;
     }
 
     public void recordSessionSeconds(String username, long seconds) {
@@ -57,13 +59,53 @@ public class VoiceUsageService {
     }
 
     public long remainingDailySeconds(String username) {
-        long maxSeconds = voiceProperties.getMaxDailyMinutesPerUser() * 60L;
+        long maxSeconds = maxDailyMinutesPerUser() * 60L;
         long used = getTodayUsage(username).secondsUsed();
         return Math.max(0, maxSeconds - used);
     }
 
     public int maxSessionDurationSeconds() {
-        return voiceProperties.getMaxSessionDurationSeconds();
+        return intSetting("voice.maxSessionDurationSeconds", voiceProperties.getMaxSessionDurationSeconds());
+    }
+
+    public int maxSessionsPerUser() {
+        return intSetting("voice.maxSessionsPerUser", voiceProperties.getMaxSessionsPerUser());
+    }
+
+    public int maxDailyMinutesPerUser() {
+        return intSetting("voice.maxDailyMinutesPerUser", voiceProperties.getMaxDailyMinutesPerUser());
+    }
+
+    public int maxGlobalSessions() {
+        return intSetting("voice.maxGlobalSessions", voiceProperties.getMaxGlobalSessions());
+    }
+
+    public String resolveGeminiApiKey() {
+        String fromDb = appSettingsService.getSettingValue("voice.geminiApiKey", "");
+        if (fromDb != null && !fromDb.isBlank()) {
+            return fromDb;
+        }
+        return voiceProperties.getGeminiApiKey();
+    }
+
+    public String resolveGeminiModel() {
+        return appSettingsService.getSettingValue(
+                "voice.geminiModel",
+                voiceProperties.getGeminiModel());
+    }
+
+    public String resolveSystemPrompt() {
+        return appSettingsService.getSettingValue(
+                "voice.systemPrompt",
+                voiceProperties.getSystemPrompt());
+    }
+
+    private int intSetting(String key, int fallback) {
+        try {
+            return Integer.parseInt(appSettingsService.getSettingValue(key, String.valueOf(fallback)));
+        } catch (Exception e) {
+            return fallback;
+        }
     }
 
     private DailyUsage getTodayUsage(String username) {
