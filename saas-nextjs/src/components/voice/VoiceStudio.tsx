@@ -157,6 +157,13 @@ export const VoiceStudio = () => {
     }
 
     await startRecording((pcm) => sendAudioRef.current(pcm))
+
+    // Re-assert playback unlock after getUserMedia (some mobile browsers re-suspend).
+    try {
+      await ensureContext()
+    } catch {
+      // Recording can continue; next audio chunk will try kickPlaybackElement.
+    }
   }, [
     recorderState,
     sessionState,

@@ -2,7 +2,9 @@
 
 import { useCallback, useRef } from 'react'
 import {
+  getPlaybackDestination,
   getSharedAudioContext,
+  kickPlaybackElement,
   unlockSharedAudioContext,
 } from '@/lib/shared-audio-context'
 
@@ -43,7 +45,8 @@ const resampleLinear = (
 
 /**
  * Plays 24 kHz PCM Int16 chunks from Gemini with gap-free scheduling.
- * Uses the shared AudioContext so speaker output works while the mic is open.
+ * Output goes to both AudioContext.destination and an HTMLAudioElement sink
+ * so speakers keep working while the microphone graph is active.
  */
 export const useAudioPlayer = () => {
   const nextStartTimeRef = useRef(0)
@@ -54,6 +57,8 @@ export const useAudioPlayer = () => {
     if (!gainRef.current || gainRef.current.context !== ctx) {
       const gain = ctx.createGain()
       gain.gain.value = 1
+      const mediaDest = getPlaybackDestination(ctx)
+      gain.connect(mediaDest)
       gain.connect(ctx.destination)
       gainRef.current = gain
     }
@@ -101,8 +106,13 @@ export const useAudioPlayer = () => {
       if (ctx.state === 'suspended') {
         void ctx.resume()
       }
+      void kickPlaybackElement()
 
       const floats = resampleLinear(int16ToFloat32(pcm), SOURCE_SAMPLE_RATE, ctx.sampleRate)
+      if (floats.length === 0) {
+        return
+      }
+
       const buffer = ctx.createBuffer(1, floats.length, ctx.sampleRate)
       buffer.getChannelData(0).set(floats)
 
@@ -111,7 +121,6 @@ export const useAudioPlayer = () => {
       source.connect(ensureOutputGain(ctx))
 
       const now = ctx.currentTime
-      // If the clock fell behind (tab background / suspend), snap to now.
       if (nextStartTimeRef.current && nextStartTimeRef.current < now - 0.05) {
         nextStartTimeRef.current = now
       }
