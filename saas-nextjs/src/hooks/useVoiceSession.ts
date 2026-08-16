@@ -90,13 +90,20 @@ export const useVoiceSession = () => {
 
   const handleMessage = useCallback((event: MessageEvent) => {
     if (event.data instanceof ArrayBuffer) {
-      handlersRef.current.onAudio?.(new Int16Array(event.data))
+      // PCM16 little-endian; ignore trailing odd byte if present.
+      const byteLength = event.data.byteLength - (event.data.byteLength % 2)
+      if (byteLength > 0) {
+        handlersRef.current.onAudio?.(new Int16Array(event.data, 0, byteLength / 2))
+      }
       return
     }
 
     if (event.data instanceof Blob) {
       void event.data.arrayBuffer().then((buf) => {
-        handlersRef.current.onAudio?.(new Int16Array(buf))
+        const byteLength = buf.byteLength - (buf.byteLength % 2)
+        if (byteLength > 0) {
+          handlersRef.current.onAudio?.(new Int16Array(buf, 0, byteLength / 2))
+        }
       })
       return
     }

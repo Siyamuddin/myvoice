@@ -1,8 +1,12 @@
 'use client'
 
 import { useCallback, useRef } from 'react'
+import {
+  getSharedAudioContext,
+  unlockSharedAudioContext,
+} from '@/lib/shared-audio-context'
 
-const PLAYBACK_SAMPLE_RATE = 24000
+const SOURCE_SAMPLE_RATE = 24000
 
 const int16ToFloat32 = (pcm: Int16Array): Float32Array => {
   const floats = new Float32Array(pcm.length)
@@ -12,23 +16,52 @@ const int16ToFloat32 = (pcm: Int16Array): Float32Array => {
   return floats
 }
 
+const resampleLinear = (
+  input: Float32Array,
+  fromRate: number,
+  toRate: number
+): Float32Array => {
+  if (fromRate === toRate || input.length === 0) {
+    return input
+  }
+
+  const ratio = fromRate / toRate
+  const outLength = Math.max(1, Math.round(input.length / ratio))
+  const output = new Float32Array(outLength)
+
+  for (let i = 0; i < outLength; i++) {
+    const srcIndex = i * ratio
+    const idx = Math.floor(srcIndex)
+    const frac = srcIndex - idx
+    const s0 = input[idx] ?? 0
+    const s1 = input[Math.min(idx + 1, input.length - 1)] ?? s0
+    output[i] = s0 + (s1 - s0) * frac
+  }
+
+  return output
+}
+
+/**
+ * Plays 24 kHz PCM Int16 chunks from Gemini with gap-free scheduling.
+ * Uses the shared AudioContext so speaker output works while the mic is open.
+ */
 export const useAudioPlayer = () => {
-  const audioContextRef = useRef<AudioContext | null>(null)
   const nextStartTimeRef = useRef(0)
   const sourcesRef = useRef<AudioBufferSourceNode[]>([])
+  const gainRef = useRef<GainNode | null>(null)
 
-  const ensureContext = useCallback((): void => {
-    if (!audioContextRef.current) {
-      const AudioContextCtor =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      audioContextRef.current = new AudioContextCtor()
+  const ensureOutputGain = useCallback((ctx: AudioContext): GainNode => {
+    if (!gainRef.current || gainRef.current.context !== ctx) {
+      const gain = ctx.createGain()
+      gain.gain.value = 1
+      gain.connect(ctx.destination)
+      gainRef.current = gain
     }
+    return gainRef.current
+  }, [])
 
-    const ctx = audioContextRef.current
-    if (ctx.state === 'suspended') {
-      void ctx.resume()
-    }
+  const ensureContext = useCallback(async (): Promise<void> => {
+    await unlockSharedAudioContext()
   }, [])
 
   const stop = useCallback((): void => {
@@ -58,32 +91,40 @@ export const useAudioPlayer = () => {
         return
       }
 
-      ensureContext()
-      const ctx = audioContextRef.current
-      if (!ctx) {
+      let ctx: AudioContext
+      try {
+        ctx = getSharedAudioContext()
+      } catch {
         return
       }
 
-      const floats = int16ToFloat32(pcm)
-      const buffer = ctx.createBuffer(1, floats.length, PLAYBACK_SAMPLE_RATE)
-      buffer.copyToChannel(floats as Float32Array<ArrayBuffer>, 0)
+      if (ctx.state === 'suspended') {
+        void ctx.resume()
+      }
+
+      const floats = resampleLinear(int16ToFloat32(pcm), SOURCE_SAMPLE_RATE, ctx.sampleRate)
+      const buffer = ctx.createBuffer(1, floats.length, ctx.sampleRate)
+      buffer.getChannelData(0).set(floats)
 
       const source = ctx.createBufferSource()
       source.buffer = buffer
-      source.connect(ctx.destination)
+      source.connect(ensureOutputGain(ctx))
 
       const now = ctx.currentTime
+      // If the clock fell behind (tab background / suspend), snap to now.
+      if (nextStartTimeRef.current && nextStartTimeRef.current < now - 0.05) {
+        nextStartTimeRef.current = now
+      }
       const startAt = Math.max(now, nextStartTimeRef.current)
       source.start(startAt)
       nextStartTimeRef.current = startAt + buffer.duration
 
       sourcesRef.current.push(source)
-
       source.onended = () => {
-        sourcesRef.current = sourcesRef.current.filter((s) => s !== source)
+        sourcesRef.current = sourcesRef.current.filter((item) => item !== source)
       }
     },
-    [ensureContext]
+    [ensureOutputGain]
   )
 
   return {

@@ -1,6 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  getSharedAudioContext,
+  unlockSharedAudioContext,
+} from '@/lib/shared-audio-context'
 
 export type VoiceRecorderState = 'idle' | 'recording' | 'denied' | 'error'
 
@@ -77,10 +81,10 @@ const downsampleLinear = (
 export const useVoiceRecorder = () => {
   const [state, setState] = useState<VoiceRecorderState>('idle')
 
-  const audioContextRef = useRef<AudioContext | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
+  const muteRef = useRef<GainNode | null>(null)
   const onChunkRef = useRef<((pcm: Int16Array) => void) | null>(null)
   const leftoverRef = useRef<Float32Array>(new Float32Array(0))
   const pendingSamplesRef = useRef<number[]>([])
@@ -95,6 +99,16 @@ export const useVoiceRecorder = () => {
         // already disconnected
       }
       processorRef.current = null
+    }
+
+    const mute = muteRef.current
+    if (mute) {
+      try {
+        mute.disconnect()
+      } catch {
+        // already disconnected
+      }
+      muteRef.current = null
     }
 
     const source = sourceRef.current
@@ -113,19 +127,7 @@ export const useVoiceRecorder = () => {
       streamRef.current = null
     }
 
-    const ctx = audioContextRef.current
-    if (ctx) {
-      try {
-        const closed = ctx.close() as Promise<void> | void
-        if (closed && typeof closed.catch === 'function') {
-          void closed.catch(() => undefined)
-        }
-      } catch {
-        // context already closed
-      }
-      audioContextRef.current = null
-    }
-
+    // Keep the shared AudioContext alive so agent playback can continue.
     leftoverRef.current = new Float32Array(0)
     pendingSamplesRef.current = []
     onChunkRef.current = null
@@ -145,6 +147,18 @@ export const useVoiceRecorder = () => {
       pendingSamplesRef.current = []
 
       try {
+        // Prefer an already-unlocked shared context from the mic tap gesture.
+        let ctx: AudioContext
+        try {
+          ctx = getSharedAudioContext()
+          if (ctx.state === 'suspended') {
+            await unlockSharedAudioContext()
+            ctx = getSharedAudioContext()
+          }
+        } catch {
+          ctx = await unlockSharedAudioContext()
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
@@ -153,12 +167,6 @@ export const useVoiceRecorder = () => {
           },
         })
         streamRef.current = stream
-
-        const AudioContextCtor =
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-        const ctx = new AudioContextCtor()
-        audioContextRef.current = ctx
 
         if (ctx.state === 'suspended') {
           await ctx.resume()
@@ -169,6 +177,13 @@ export const useVoiceRecorder = () => {
 
         const processor = ctx.createScriptProcessor(PROCESSOR_BUFFER_SIZE, 1, 1)
         processorRef.current = processor
+
+        // Keep ScriptProcessor in the graph (required for onaudioprocess) but
+        // mute its output so mic audio is not played through the speakers and
+        // so playback on the same context remains audible.
+        const mute = ctx.createGain()
+        mute.gain.value = 0
+        muteRef.current = mute
 
         processor.onaudioprocess = (event: AudioProcessingEvent) => {
           const mono = toMono(event.inputBuffer)
@@ -188,10 +203,14 @@ export const useVoiceRecorder = () => {
               onChunkRef.current?.(chunk)
             }
           }
+
+          // Explicit silence on the muted path (some browsers pass input through).
+          event.outputBuffer.getChannelData(0).fill(0)
         }
 
         source.connect(processor)
-        processor.connect(ctx.destination)
+        processor.connect(mute)
+        mute.connect(ctx.destination)
         setState('recording')
       } catch (err) {
         stop()
