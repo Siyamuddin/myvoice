@@ -36,9 +36,9 @@ jobs:
     needs: ci
     runs-on: [self-hosted, mac, arm64]
     steps:
-      # Deploy from the host repo (~/repos/myvoice) so the gitignored .env
-      # (Gemini key, JWT secret, DB creds) is present. Checkout the exact SHA
-      # that triggered this run, then rebuild + restart containers.
+      # Reuse the battle-tested host deploy script (~/.hermes/scripts/myvoice-deploy.sh)
+      # which runs the CI gates + docker compose + health check + tailscale re-assert.
+      # FORCE=1 skips the "no changes" check so it deploys the triggering commit.
       - name: Sync host repo to triggering commit
         run: |
           cd "$HOME/repos/myvoice"
@@ -47,23 +47,12 @@ jobs:
             git checkout --quiet -b deploy-$(date +%s) "${{ github.sha }}"
           echo "Host repo at: $(git rev-parse --short HEAD)"
 
-      - name: Rebuild + restart containers
-        working-directory: /Users/uddinsiyam/repos/myvoice
-        run: docker compose up -d --build
-        env:
-          COMPOSE_PROJECT_NAME: fullstack-saas
-
-      - name: Health check
+      - name: Run host deploy pipeline
         run: |
-          for i in $(seq 1 15); do
-            if curl -sf -m 5 http://localhost:9090/actuator/health >/dev/null 2>&1; then
-              echo "Backend healthy"
-              exit 0
-            fi
-            sleep 4
-          done
-          echo "Backend failed health check" >&2
-          exit 1
+          FORCE=1 bash "$HOME/.hermes/scripts/myvoice-deploy.sh"
 
-      - name: Re-assert Tailscale serve
-        run: sudo tailscale serve --bg http://localhost:5174 || true
+      - name: Restore host repo to main
+        run: |
+          cd "$HOME/repos/myvoice"
+          git checkout --quiet main
+          echo "Host repo restored to: $(git rev-parse --short main)"
