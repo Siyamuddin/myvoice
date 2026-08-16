@@ -1,12 +1,12 @@
-name: fullstack-saas
+name: myvoice
 
 services:
   db:
     image: mysql:8.0
-    container_name: saas-db
+    container_name: myvoice-db
     restart: unless-stopped
     networks:
-      - saas-net
+      - myvoice-net
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -22,10 +22,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: saas-redis
+    container_name: myvoice-redis
     restart: unless-stopped
     networks:
-      - saas-net
+      - myvoice-net
     ports:
       - "${REDIS_HOST_PORT:-6381}:6379"
     healthcheck:
@@ -38,7 +38,7 @@ services:
     build:
       context: ./saas-springboot
       dockerfile: Dockerfile
-    container_name: saas-app
+    container_name: myvoice-app
     restart: unless-stopped
     depends_on:
       db:
@@ -50,7 +50,7 @@ services:
     volumes:
       - ./uploads:/app/uploads
     networks:
-      - saas-net
+      - myvoice-net
     env_file:
       - .env
     environment:
@@ -77,28 +77,46 @@ services:
       GEMINI_LIVE_MODEL: ${GEMINI_LIVE_MODEL}
       VOICE_SYSTEM_PROMPT: ${VOICE_SYSTEM_PROMPT}
       VOICE_MAX_SESSIONS_PER_USER: ${VOICE_MAX_SESSIONS_PER_USER}
+      VOICE_MAX_SESSION_DURATION_SECONDS: ${VOICE_MAX_SESSION_DURATION_SECONDS:-600}
+      VOICE_MAX_DAILY_MINUTES_PER_USER: ${VOICE_MAX_DAILY_MINUTES_PER_USER:-30}
+      VOICE_MAX_GLOBAL_SESSIONS: ${VOICE_MAX_GLOBAL_SESSIONS:-50}
+      SPRINGDOC_API_DOCS_ENABLED: ${SPRINGDOC_API_DOCS_ENABLED:-false}
+      SPRINGDOC_SWAGGER_UI_ENABLED: ${SPRINGDOC_SWAGGER_UI_ENABLED:-false}
+
+  next:
+    build:
+      context: ./saas-nextjs
+      dockerfile: Dockerfile
+      target: next
+    container_name: myvoice-next
+    restart: unless-stopped
+    depends_on:
+      - app
+    networks:
+      - myvoice-net
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
 
   frontend:
     build:
-      context: ./saas-reactjs
+      context: ./saas-nextjs
       dockerfile: Dockerfile
-    container_name: saas-frontend
+      target: frontend
+    container_name: myvoice-frontend
     restart: unless-stopped
     depends_on:
+      - next
       - app
     ports:
       - "${FRONTEND_PORT:-5174}:5173"
     networks:
-      - saas-net
-    env_file:
-      - .env
-    environment:
-      - VITE_API_BASE_URL=${VITE_API_BASE_URL}
+      - myvoice-net
 
 volumes:
   db_data:
 
 networks:
-  saas-net:
+  myvoice-net:
     driver: bridge
-

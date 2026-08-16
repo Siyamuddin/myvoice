@@ -1,0 +1,345 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import { useAudioPlayer } from '@/hooks/useAudioPlayer'
+import { useVoiceRecorder } from '@/hooks/useVoiceRecorder'
+import {
+  useVoiceSession,
+  type VoiceSessionError,
+  type VoiceSessionState,
+} from '@/hooks/useVoiceSession'
+
+type TranscriptRole = 'user' | 'assistant'
+
+type TranscriptMessage = {
+  role: TranscriptRole
+  text: string
+}
+
+const ERROR_TOASTS: Record<string, string> = {
+  SESSION_LIMIT: 'You already have an active voice session. End it before starting another.',
+  RATE_LIMITED: 'Voice rate limit reached. Please wait a moment and try again.',
+  VOICE_DISABLED: 'Voice agent is currently disabled.',
+  GEMINI_CONNECT_FAILED: 'Could not connect to the AI voice service. Please try again.',
+  USAGE_LIMIT: 'Daily free-beta voice minutes used up. Come back tomorrow.',
+  SESSION_DURATION_LIMIT: 'This session hit the free-beta time limit. Start a new one.',
+  GLOBAL_CAPACITY: 'myvoice is at capacity right now. Try again shortly.',
+}
+
+const statusLabel = (state: VoiceSessionState): string => {
+  switch (state) {
+    case 'connecting':
+      return 'Connecting'
+    case 'connected':
+      return 'Connected'
+    case 'reconnecting':
+      return 'Reconnecting'
+    case 'error':
+      return 'Error'
+    case 'closed':
+      return 'Disconnected'
+    default:
+      return 'Ready'
+  }
+}
+
+const statusTone = (state: VoiceSessionState): string => {
+  switch (state) {
+    case 'connected':
+      return 'border-ok/30 bg-ok/10 text-ok'
+    case 'reconnecting':
+    case 'connecting':
+      return 'border-warn/30 bg-warn/10 text-warn'
+    case 'error':
+      return 'border-danger/30 bg-danger/10 text-danger'
+    default:
+      return 'border-line bg-foam text-ink-soft'
+  }
+}
+
+const appendOrReplaceTranscript = (
+  prev: TranscriptMessage[],
+  role: TranscriptRole,
+  text: string
+): TranscriptMessage[] => {
+  if (!text) {
+    return prev
+  }
+  const last = prev[prev.length - 1]
+  if (last?.role === role) {
+    return [...prev.slice(0, -1), { role, text }]
+  }
+  return [...prev, { role, text }]
+}
+
+export const VoiceStudio = () => {
+  const { state: recorderState, start: startRecording, stop: stopRecording } = useVoiceRecorder()
+  const { playChunk, stop: stopPlayer, ensureContext } = useAudioPlayer()
+  const { state: sessionState, rttMs, connect, disconnect, sendAudio } = useVoiceSession()
+
+  const [messages, setMessages] = useState<TranscriptMessage[]>([])
+
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null)
+  const deniedToastShownRef = useRef(false)
+  const micErrorToastShownRef = useRef(false)
+
+  const playChunkRef = useRef(playChunk)
+  const stopPlayerRef = useRef(stopPlayer)
+  const sendAudioRef = useRef(sendAudio)
+
+  useEffect(() => {
+    playChunkRef.current = playChunk
+    stopPlayerRef.current = stopPlayer
+    sendAudioRef.current = sendAudio
+  }, [playChunk, stopPlayer, sendAudio])
+
+  const handleUserTranscript = useCallback((text: string) => {
+    setMessages((prev) => appendOrReplaceTranscript(prev, 'user', text))
+  }, [])
+
+  const handleAssistantTranscript = useCallback((text: string) => {
+    setMessages((prev) => appendOrReplaceTranscript(prev, 'assistant', text))
+  }, [])
+
+  const handleSessionError = useCallback((error: VoiceSessionError) => {
+    const mapped = error.code ? ERROR_TOASTS[error.code] : undefined
+    toast.error(mapped ?? error.message)
+  }, [])
+
+  const connectSession = useCallback(() => {
+    connect({
+      onAudio: (pcm) => playChunkRef.current(pcm),
+      onUserTranscript: handleUserTranscript,
+      onAssistantTranscript: handleAssistantTranscript,
+      onInterrupted: () => stopPlayerRef.current(),
+      onError: handleSessionError,
+    })
+  }, [connect, handleUserTranscript, handleAssistantTranscript, handleSessionError])
+
+  const handleStopRecording = useCallback(() => {
+    stopRecording()
+  }, [stopRecording])
+
+  const handleEndSession = useCallback(() => {
+    stopRecording()
+    stopPlayer()
+    disconnect()
+  }, [stopRecording, stopPlayer, disconnect])
+
+  const handleRetry = useCallback(() => {
+    stopRecording()
+    stopPlayer()
+    disconnect()
+    connectSession()
+  }, [stopRecording, stopPlayer, disconnect, connectSession])
+
+  const handleMicToggle = useCallback(async () => {
+    if (recorderState === 'recording') {
+      handleStopRecording()
+      return
+    }
+
+    if (sessionState === 'connecting' || sessionState === 'reconnecting') {
+      return
+    }
+
+    ensureContext()
+
+    if (sessionState !== 'connected') {
+      connectSession()
+    }
+
+    await startRecording((pcm) => sendAudioRef.current(pcm))
+  }, [
+    recorderState,
+    sessionState,
+    ensureContext,
+    connectSession,
+    startRecording,
+    handleStopRecording,
+  ])
+
+  useEffect(() => {
+    if (recorderState === 'recording') {
+      deniedToastShownRef.current = false
+      micErrorToastShownRef.current = false
+      return
+    }
+
+    if (recorderState === 'denied') {
+      if (!deniedToastShownRef.current) {
+        deniedToastShownRef.current = true
+        toast.error(
+          'Microphone access denied. Allow mic permission in your browser settings and try again.'
+        )
+      }
+      return
+    }
+
+    if (recorderState === 'error') {
+      if (!micErrorToastShownRef.current) {
+        micErrorToastShownRef.current = true
+        toast.error('Microphone error. Check your device and try again.')
+      }
+    }
+  }, [recorderState])
+
+  useEffect(() => {
+    if (sessionState !== 'error') {
+      return
+    }
+    stopRecording()
+  }, [sessionState, stopRecording])
+
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  useEffect(() => {
+    return () => {
+      stopRecording()
+      disconnect()
+      stopPlayer()
+    }
+  }, [stopRecording, disconnect, stopPlayer])
+
+  const micDisabled = sessionState === 'connecting' || sessionState === 'reconnecting'
+  const showRetry = sessionState === 'error'
+  const recordingActive = recorderState === 'recording'
+  const sessionActive =
+    sessionState === 'connected' ||
+    sessionState === 'connecting' ||
+    sessionState === 'reconnecting'
+
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="animate-rise">
+          <p className="text-sm font-semibold tracking-wide text-teal">Free beta</p>
+          <h1 className="mt-1 font-display text-4xl text-ink sm:text-5xl">Talk</h1>
+          <p className="mt-2 text-ink-soft">
+            English, Bangla, or Korean — headphones recommended.
+          </p>
+        </div>
+        <div
+          className={`inline-flex items-center gap-2 self-start rounded-md border px-3 py-1.5 text-sm font-medium animate-rise-delay ${statusTone(sessionState)}`}
+          aria-live="polite"
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${
+              sessionState === 'connected'
+                ? 'bg-ok'
+                : sessionState === 'error'
+                  ? 'bg-danger'
+                  : sessionState === 'reconnecting' || sessionState === 'connecting'
+                    ? 'bg-warn animate-pulse'
+                    : 'bg-ink-soft/50'
+            }`}
+            aria-hidden="true"
+          />
+          <span>{statusLabel(sessionState)}</span>
+          {rttMs != null && sessionState === 'connected' && (
+            <span className="opacity-80">RTT {rttMs}ms</span>
+          )}
+        </div>
+      </div>
+
+      <div className="glass-panel animate-rise-delay-2 rounded-2xl p-5 sm:p-7">
+        <div
+          className="mb-8 max-h-80 min-h-[14rem] space-y-3 overflow-y-auto rounded-xl bg-white/50 p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+          tabIndex={0}
+          role="log"
+          aria-label="Conversation transcript"
+          aria-live="polite"
+        >
+          {messages.length === 0 ? (
+            <p className="py-12 text-center text-ink-soft">Tap the mic and start talking…</p>
+          ) : (
+            messages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                    message.role === 'user'
+                      ? 'bg-teal text-white'
+                      : 'bg-mist-deep/80 text-ink'
+                  }`}
+                >
+                  {message.text}
+                </div>
+              </div>
+            ))
+          )}
+          <div ref={transcriptEndRef} />
+        </div>
+
+        <div className="flex flex-col items-center gap-5">
+          <div className="relative">
+            {recordingActive && (
+              <span
+                className="absolute inset-0 rounded-full bg-teal-bright/30 animate-pulse-ring"
+                aria-hidden="true"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                void handleMicToggle()
+              }}
+              disabled={micDisabled}
+              aria-label={recordingActive ? 'Stop recording' : 'Start recording'}
+              aria-pressed={recordingActive}
+              className={`relative flex h-20 w-20 items-center justify-center rounded-full bg-teal text-white shadow-[0_12px_40px_var(--teal-glow)] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-bright focus-visible:ring-offset-2 focus-visible:ring-offset-foam disabled:cursor-not-allowed disabled:opacity-50 ${
+                recordingActive ? 'scale-105' : 'hover:scale-105'
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className="h-8 w-8"
+                aria-hidden="true"
+              >
+                {recordingActive ? (
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                ) : (
+                  <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z" />
+                )}
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {sessionActive && (
+              <button
+                type="button"
+                onClick={handleEndSession}
+                className="rounded-md border border-danger/30 bg-danger/5 px-4 py-2 text-sm font-medium text-danger transition hover:bg-danger/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+                aria-label="End voice session"
+              >
+                End
+              </button>
+            )}
+            {showRetry && (
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="rounded-md border border-teal/30 bg-teal/5 px-4 py-2 text-sm font-medium text-teal transition hover:bg-teal/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+                aria-label="Retry voice connection"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+
+          <p className="text-center text-sm text-ink-soft">
+            Use headphones — speaker audio can echo into the mic.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
