@@ -146,6 +146,25 @@ public class GeminiLiveClient {
     }
 
     /**
+     * Tells Gemini the current mic stream ended so VAD can finish the user turn
+     * without treating capture noise as a barge-in.
+     */
+    public void sendAudioStreamEnd() {
+        if (state.get() == State.CLOSED) {
+            return;
+        }
+        WebSocket ws = awaitSocketReady();
+        awaitSetupComplete();
+        try {
+            ObjectNode root = MAPPER.createObjectNode();
+            root.putObject("realtimeInput").put("audioStreamEnd", true);
+            ws.sendText(MAPPER.writeValueAsString(root), true);
+        } catch (Exception e) {
+            log.debug("Failed to send audioStreamEnd", e);
+        }
+    }
+
+    /**
      * Gracefully closes the WebSocket if open.
      */
     public void close() {
@@ -195,7 +214,11 @@ public class GeminiLiveClient {
             ObjectNode prebuiltVoiceConfig = voiceConfig.putObject("prebuiltVoiceConfig");
             prebuiltVoiceConfig.put("voiceName", "Kore");
             ObjectNode realtimeInputConfig = setup.putObject("realtimeInputConfig");
-            realtimeInputConfig.putObject("automaticActivityDetection");
+            ObjectNode automaticActivityDetection = realtimeInputConfig.putObject("automaticActivityDetection");
+            automaticActivityDetection.put("startOfSpeechSensitivity", "START_SENSITIVITY_LOW");
+            automaticActivityDetection.put("endOfSpeechSensitivity", "END_SENSITIVITY_HIGH");
+            automaticActivityDetection.put("silenceDurationMs", 800);
+            realtimeInputConfig.put("activityHandling", "START_OF_ACTIVITY_INTERRUPTS");
             ObjectNode systemInstruction = setup.putObject("systemInstruction");
             ArrayNode parts = systemInstruction.putArray("parts");
             ObjectNode part = parts.addObject();
@@ -265,16 +288,22 @@ public class GeminiLiveClient {
             }
 
             JsonNode modelTurn = serverContent.get("modelTurn");
+            if (modelTurn == null) {
+                modelTurn = serverContent.get("model_turn");
+            }
             if (modelTurn != null) {
                 JsonNode parts = modelTurn.get("parts");
                 if (parts != null && parts.isArray()) {
                     for (JsonNode part : parts) {
                         JsonNode inlineData = part.get("inlineData");
                         if (inlineData == null) {
+                            inlineData = part.get("inline_data");
+                        }
+                        if (inlineData == null) {
                             continue;
                         }
                         JsonNode data = inlineData.get("data");
-                        if (data != null && data.isTextual()) {
+                        if (data != null && data.isTextual() && !data.asText().isBlank()) {
                             result.audioChunks.add(AudioCodec.fromBase64(data.asText()));
                         }
                     }

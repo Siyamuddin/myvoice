@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { pcmRms } from '@/lib/pcm-wav'
 import { useAudioPlayer } from '@/hooks/useAudioPlayer'
 import { useVoiceRecorder } from '@/hooks/useVoiceRecorder'
 import {
@@ -75,24 +76,43 @@ const appendOrReplaceTranscript = (
 
 export const VoiceStudio = () => {
   const { state: recorderState, start: startRecording, stop: stopRecording } = useVoiceRecorder()
-  const { playChunk, stop: stopPlayer, ensureContext } = useAudioPlayer()
-  const { state: sessionState, rttMs, connect, disconnect, sendAudio } = useVoiceSession()
+  const { playChunk, flush: flushPlayer, stop: stopPlayer, ensureContext, isPlaying } = useAudioPlayer()
+  const { state: sessionState, rttMs, connect, disconnect, sendAudio, sendAudioStreamEnd } =
+    useVoiceSession()
 
   const [messages, setMessages] = useState<TranscriptMessage[]>([])
 
   const transcriptEndRef = useRef<HTMLDivElement | null>(null)
   const deniedToastShownRef = useRef(false)
   const micErrorToastShownRef = useRef(false)
+  const agentHoldRef = useRef(false)
+  const streamEndSentRef = useRef(false)
 
   const playChunkRef = useRef(playChunk)
+  const flushPlayerRef = useRef(flushPlayer)
   const stopPlayerRef = useRef(stopPlayer)
   const sendAudioRef = useRef(sendAudio)
+  const sendAudioStreamEndRef = useRef(sendAudioStreamEnd)
+  const isPlayingRef = useRef(isPlaying)
 
   useEffect(() => {
     playChunkRef.current = playChunk
+    flushPlayerRef.current = flushPlayer
     stopPlayerRef.current = stopPlayer
     sendAudioRef.current = sendAudio
-  }, [playChunk, stopPlayer, sendAudio])
+    sendAudioStreamEndRef.current = sendAudioStreamEnd
+    isPlayingRef.current = isPlaying
+  }, [playChunk, flushPlayer, stopPlayer, sendAudio, sendAudioStreamEnd, isPlaying])
+
+  const beginAgentHold = useCallback(() => {
+    if (!agentHoldRef.current) {
+      agentHoldRef.current = true
+      if (!streamEndSentRef.current) {
+        streamEndSentRef.current = true
+        sendAudioStreamEndRef.current()
+      }
+    }
+  }, [])
 
   const handleUserTranscript = useCallback((text: string) => {
     setMessages((prev) => appendOrReplaceTranscript(prev, 'user', text))
@@ -109,19 +129,34 @@ export const VoiceStudio = () => {
 
   const connectSession = useCallback(() => {
     connect({
-      onAudio: (pcm) => playChunkRef.current(pcm),
+      onAudio: (pcm) => {
+        beginAgentHold()
+        playChunkRef.current(pcm)
+      },
       onUserTranscript: handleUserTranscript,
       onAssistantTranscript: handleAssistantTranscript,
-      onInterrupted: () => stopPlayerRef.current(),
+      onInterrupted: () => {
+        // Ignore server barge-in while we are holding the mic closed for playback.
+        // Continuous capture otherwise cancels the reply before it is audible.
+        if (agentHoldRef.current || isPlayingRef.current()) {
+          return
+        }
+        stopPlayerRef.current()
+      },
       onError: handleSessionError,
     })
-  }, [connect, handleUserTranscript, handleAssistantTranscript, handleSessionError])
+  }, [connect, handleUserTranscript, handleAssistantTranscript, handleSessionError, beginAgentHold])
 
   const handleStopRecording = useCallback(() => {
+    agentHoldRef.current = false
+    streamEndSentRef.current = false
+    flushPlayerRef.current()
     stopRecording()
   }, [stopRecording])
 
   const handleEndSession = useCallback(() => {
+    agentHoldRef.current = false
+    streamEndSentRef.current = false
     stopRecording()
     stopPlayer()
     disconnect()
@@ -156,7 +191,18 @@ export const VoiceStudio = () => {
       connectSession()
     }
 
-    await startRecording((pcm) => sendAudioRef.current(pcm))
+    await startRecording((pcm) => {
+      if (agentHoldRef.current || isPlayingRef.current()) {
+        if (pcmRms(pcm) > 0.08) {
+          agentHoldRef.current = false
+          streamEndSentRef.current = false
+          stopPlayerRef.current()
+          sendAudioRef.current(pcm)
+        }
+        return
+      }
+      sendAudioRef.current(pcm)
+    })
 
     // Re-assert playback unlock after getUserMedia (some mobile browsers re-suspend).
     try {
@@ -172,6 +218,16 @@ export const VoiceStudio = () => {
     startRecording,
     handleStopRecording,
   ])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (agentHoldRef.current && !isPlaying()) {
+        agentHoldRef.current = false
+        streamEndSentRef.current = false
+      }
+    }, 250)
+    return () => window.clearInterval(id)
+  }, [isPlaying])
 
   useEffect(() => {
     if (recorderState === 'recording') {

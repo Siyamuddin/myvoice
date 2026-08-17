@@ -217,6 +217,17 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
 
         if ("ping".equals(type)) {
             sendJson(session, Map.of("type", "pong"));
+            return;
+        }
+
+        if ("audio_stream_end".equals(type)) {
+            if (holder != null && holder.client() != null) {
+                try {
+                    holder.client().sendAudioStreamEnd();
+                } catch (IllegalStateException e) {
+                    log.debug("audio_stream_end ignored; Gemini not ready", e);
+                }
+            }
         }
     }
 

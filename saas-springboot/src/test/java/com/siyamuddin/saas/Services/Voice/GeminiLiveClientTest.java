@@ -44,6 +44,13 @@ class GeminiLiveClientTest {
                 .isEqualTo("Kore");
         assertThat(setup.get("realtimeInputConfig").get("automaticActivityDetection").isObject())
                 .isTrue();
+        assertThat(setup.get("realtimeInputConfig").get("activityHandling").asText())
+                .isEqualTo("START_OF_ACTIVITY_INTERRUPTS");
+        assertThat(setup.get("realtimeInputConfig")
+                        .get("automaticActivityDetection")
+                        .get("silenceDurationMs")
+                        .asInt())
+                .isEqualTo(800);
         assertThat(setup.get("systemInstruction").get("parts").get(0).get("text").asText())
                 .isEqualTo("You are a helpful AI assistant.");
         assertThat(setup.get("inputAudioTranscription").isObject()).isTrue();
@@ -92,6 +99,28 @@ class GeminiLiveClientTest {
         assertThat(parsed.toolCall).isFalse();
         assertThat(parsed.setupComplete).isFalse();
         assertThat(parsed.errorMessage).isNull();
+    }
+
+    @Test
+    void parseServerContentExtractsSnakeCaseInlineAudio() {
+        byte[] pcm24k = new byte[] {1, 2, 3, 4};
+        String audioB64 = Base64.getEncoder().encodeToString(pcm24k);
+        String json = """
+                {
+                  "serverContent": {
+                    "model_turn": {
+                      "parts": [
+                        { "inline_data": { "data": "%s", "mime_type": "audio/pcm;rate=24000" } }
+                      ]
+                    }
+                  }
+                }
+                """.formatted(audioB64);
+
+        GeminiLiveClient.ParsedServerContent parsed = GeminiLiveClient.parseServerContent(json);
+
+        assertThat(parsed.audioChunks).hasSize(1);
+        assertThat(parsed.audioChunks.get(0)).isEqualTo(pcm24k);
     }
 
     @Test

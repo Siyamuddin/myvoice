@@ -1,16 +1,18 @@
 'use client'
 
+import { encodePcm16ToWav } from '@/lib/pcm-wav'
+
 /**
- * Shared AudioContext + HTMLAudioElement sink for mic capture and agent playback.
- *
- * Routing PCM through a MediaStreamAudioDestinationNode into an HTMLAudioElement
- * is more reliable than AudioContext.destination alone while getUserMedia is active
- * (especially on mobile Chrome/Safari).
+ * Shared AudioContext for microphone capture, plus HTMLAudioElements for
+ * speaker output. Do not route agent PCM through MediaStreamAudioDestinationNode:
+ * that stream is silent on iOS Safari and some Android Chrome builds while the
+ * mic is open.
  */
 
 let sharedContext: AudioContext | null = null
-let mediaDestination: MediaStreamAudioDestinationNode | null = null
-let playbackElement: HTMLAudioElement | null = null
+let holdElement: HTMLAudioElement | null = null
+let speechElement: HTMLAudioElement | null = null
+let holdUrl: string | null = null
 let unlockInFlight: Promise<AudioContext> | null = null
 
 const getAudioContextConstructor = (): typeof AudioContext => {
@@ -23,71 +25,71 @@ const getAudioContextConstructor = (): typeof AudioContext => {
   return ctor
 }
 
-const ensurePlaybackElement = (stream: MediaStream): HTMLAudioElement => {
-  if (!playbackElement) {
-    const audio = document.createElement('audio')
-    audio.setAttribute('playsinline', 'true')
-    audio.setAttribute('webkit-playsinline', 'true')
-    audio.autoplay = true
-    audio.controls = false
-    audio.preload = 'auto'
-    audio.muted = false
-    audio.volume = 1
-    // Keep the element in the DOM so mobile browsers keep the media session alive.
-    audio.style.position = 'fixed'
-    audio.style.width = '1px'
-    audio.style.height = '1px'
-    audio.style.opacity = '0'
-    audio.style.pointerEvents = 'none'
-    audio.style.left = '0'
-    audio.style.bottom = '0'
-    audio.setAttribute('aria-hidden', 'true')
-    document.body.appendChild(audio)
-    playbackElement = audio
-  }
+const createAttachedAudio = (): HTMLAudioElement => {
+  const audio = document.createElement('audio')
+  audio.setAttribute('playsinline', 'true')
+  audio.setAttribute('webkit-playsinline', 'true')
+  ;(audio as HTMLAudioElement & { playsInline?: boolean }).playsInline = true
+  audio.autoplay = true
+  audio.controls = false
+  audio.preload = 'auto'
+  audio.muted = false
+  audio.volume = 1
+  audio.style.position = 'fixed'
+  audio.style.width = '1px'
+  audio.style.height = '1px'
+  audio.style.opacity = '0.01'
+  audio.style.pointerEvents = 'none'
+  audio.style.left = '0'
+  audio.style.bottom = '0'
+  audio.setAttribute('aria-hidden', 'true')
+  document.body.appendChild(audio)
+  return audio
+}
 
-  if (playbackElement.srcObject !== stream) {
-    playbackElement.srcObject = stream
+const ensureHoldElement = (): HTMLAudioElement => {
+  if (!holdElement) {
+    holdElement = createAttachedAudio()
+    holdElement.loop = true
   }
+  return holdElement
+}
 
-  return playbackElement
+export const getSpeechAudioElement = (): HTMLAudioElement => {
+  if (!speechElement) {
+    speechElement = createAttachedAudio()
+    speechElement.loop = false
+  }
+  return speechElement
 }
 
 export const getSharedAudioContext = (): AudioContext => {
   if (!sharedContext || sharedContext.state === 'closed') {
     sharedContext = new (getAudioContextConstructor())()
-    mediaDestination = null
   }
   return sharedContext
 }
 
-export const getPlaybackDestination = (
-  ctx: AudioContext = getSharedAudioContext()
-): MediaStreamAudioDestinationNode => {
-  if (!mediaDestination || mediaDestination.context !== ctx) {
-    mediaDestination = ctx.createMediaStreamDestination()
+const startHoldTone = async (): Promise<void> => {
+  const hold = ensureHoldElement()
+  if (!holdUrl) {
+    const wav = encodePcm16ToWav(new Int16Array(4800), 24000)
+    holdUrl = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }))
   }
-  ensurePlaybackElement(mediaDestination.stream)
-  return mediaDestination
-}
-
-const playSilentUnlockBuffer = (ctx: AudioContext): void => {
+  if (hold.src !== holdUrl) {
+    hold.src = holdUrl
+  }
+  hold.muted = false
+  hold.volume = 0.01
   try {
-    const buffer = ctx.createBuffer(1, 1, ctx.sampleRate)
-    const source = ctx.createBufferSource()
-    const dest = getPlaybackDestination(ctx)
-    source.buffer = buffer
-    source.connect(dest)
-    source.connect(ctx.destination)
-    source.start(0)
+    await hold.play()
   } catch {
-    // Ignore unlock-buffer failures; resume()/audio.play() are the primary unlock paths.
+    // Speech element play() is the critical unlock; hold is best-effort.
   }
 }
 
 /**
- * Must be called from a user-gesture call stack (click/tap) before any await
- * that leaves that stack (e.g. getUserMedia). Safari will not unlock otherwise.
+ * Must run in a user-gesture call stack (mic tap) before getUserMedia.
  */
 export const unlockSharedAudioContext = async (): Promise<AudioContext> => {
   if (unlockInFlight) {
@@ -96,21 +98,22 @@ export const unlockSharedAudioContext = async (): Promise<AudioContext> => {
 
   unlockInFlight = (async () => {
     const ctx = getSharedAudioContext()
-    const dest = getPlaybackDestination(ctx)
-    const audio = ensurePlaybackElement(dest.stream)
+    const speech = getSpeechAudioElement()
 
     if (ctx.state === 'suspended') {
       await ctx.resume()
     }
 
-    playSilentUnlockBuffer(ctx)
+    await startHoldTone()
 
     try {
-      audio.muted = false
-      audio.volume = 1
-      await audio.play()
+      speech.muted = false
+      speech.volume = 1
+      if (speech.paused && speech.src) {
+        await speech.play()
+      }
     } catch {
-      // Some browsers reject play() until a later gesture; mic tap usually retries.
+      // First real WAV chunk will call play() again.
     }
 
     if (ctx.state === 'suspended') {
@@ -128,32 +131,45 @@ export const unlockSharedAudioContext = async (): Promise<AudioContext> => {
 }
 
 export const kickPlaybackElement = async (): Promise<void> => {
-  const audio = playbackElement
-  if (!audio) return
+  const speech = speechElement
+  if (!speech) return
   try {
-    audio.muted = false
-    audio.volume = 1
-    if (audio.paused) {
-      await audio.play()
+    speech.muted = false
+    speech.volume = 1
+    if (speech.paused && speech.src) {
+      await speech.play()
     }
   } catch {
     // ignore
   }
+  if (sharedContext?.state === 'suspended') {
+    void sharedContext.resume()
+  }
 }
 
-/** Test helper — not used at runtime. */
 export const __resetSharedAudioContextForTests = (): void => {
-  if (playbackElement) {
+  if (holdUrl) {
     try {
-      playbackElement.pause()
-      playbackElement.srcObject = null
-      playbackElement.remove()
+      URL.revokeObjectURL(holdUrl)
     } catch {
       // ignore
     }
   }
-  playbackElement = null
-  mediaDestination = null
+  holdUrl = null
+
+  for (const el of [holdElement, speechElement]) {
+    if (!el) continue
+    try {
+      el.pause()
+      el.removeAttribute('src')
+      el.srcObject = null
+      el.remove()
+    } catch {
+      // ignore
+    }
+  }
+  holdElement = null
+  speechElement = null
 
   if (sharedContext && sharedContext.state !== 'closed') {
     try {
