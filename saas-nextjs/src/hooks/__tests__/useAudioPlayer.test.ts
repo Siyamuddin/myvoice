@@ -1,18 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useAudioPlayer } from '../useAudioPlayer'
+import { encodePcm16ToWav } from '@/lib/pcm-wav'
 import { __resetSharedAudioContextForTests } from '@/lib/shared-audio-context'
 
+describe('encodePcm16ToWav', () => {
+  it('writes a valid PCM WAV header', () => {
+    const pcm = new Int16Array([0, 32767, -32768, 123])
+    const wav = encodePcm16ToWav(pcm, 24000)
+    const view = new DataView(wav)
+    const ascii = (offset: number, length: number) =>
+      String.fromCharCode(...new Uint8Array(wav, offset, length))
+
+    expect(ascii(0, 4)).toBe('RIFF')
+    expect(ascii(8, 4)).toBe('WAVE')
+    expect(view.getUint16(20, true)).toBe(1)
+    expect(view.getUint16(22, true)).toBe(1)
+    expect(view.getUint32(24, true)).toBe(24000)
+    expect(view.getUint16(34, true)).toBe(16)
+    expect(view.getUint32(40, true)).toBe(pcm.byteLength)
+    expect(wav.byteLength).toBe(44 + pcm.byteLength)
+  })
+})
+
 describe('useAudioPlayer', () => {
-  let currentTime: number
-  let createdSources: Array<{
-    connect: ReturnType<typeof vi.fn>
-    start: ReturnType<typeof vi.fn>
-    stop: ReturnType<typeof vi.fn>
-    disconnect: ReturnType<typeof vi.fn>
-    buffer: AudioBuffer | null
-    onended: ((ev: Event) => void) | null
-  }>
   let fakeContext: {
     currentTime: number
     state: string
@@ -20,72 +31,25 @@ describe('useAudioPlayer', () => {
     destination: object
     resume: ReturnType<typeof vi.fn>
     close: ReturnType<typeof vi.fn>
-    createBuffer: ReturnType<typeof vi.fn>
-    createBufferSource: ReturnType<typeof vi.fn>
-    createGain: ReturnType<typeof vi.fn>
-    createMediaStreamDestination: ReturnType<typeof vi.fn>
   }
-  let mediaDest: { stream: MediaStream; context: unknown; connect?: unknown }
+  let createdAudio: Array<{
+    play: ReturnType<typeof vi.fn>
+    pause: ReturnType<typeof vi.fn>
+    load: ReturnType<typeof vi.fn>
+    src: string
+  }>
 
   beforeEach(() => {
     __resetSharedAudioContextForTests()
-    currentTime = 10
-    createdSources = []
-
-    mediaDest = {
-      stream: { id: 'fake-stream' } as unknown as MediaStream,
-      context: null,
-    }
-
+    createdAudio = []
     fakeContext = {
-      get currentTime() {
-        return currentTime
-      },
+      currentTime: 0,
       state: 'running',
-      sampleRate: 24000,
+      sampleRate: 48000,
       destination: {},
       resume: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
-      createGain: vi.fn(),
-      createMediaStreamDestination: vi.fn(() => {
-        mediaDest.context = fakeContext
-        return mediaDest
-      }),
-      createBuffer: vi.fn((channels: number, length: number, sampleRate: number) => {
-        const channelData = new Float32Array(length)
-        return {
-          numberOfChannels: channels,
-          length,
-          sampleRate,
-          duration: length / sampleRate,
-          copyToChannel: (src: Float32Array, channel: number) => {
-            if (channel === 0) {
-              channelData.set(src)
-            }
-          },
-          getChannelData: () => channelData,
-        }
-      }),
-      createBufferSource: vi.fn(() => {
-        const source = {
-          connect: vi.fn(),
-          start: vi.fn(),
-          stop: vi.fn(),
-          disconnect: vi.fn(),
-          buffer: null as AudioBuffer | null,
-          onended: null as ((ev: Event) => void) | null,
-        }
-        createdSources.push(source)
-        return source
-      }),
     }
-
-    fakeContext.createGain = vi.fn(() => ({
-      gain: { value: 1 },
-      connect: vi.fn(),
-      disconnect: vi.fn(),
-      context: fakeContext as unknown as AudioContext,
-    }))
 
     class FakeAudio {
       autoplay = false
@@ -93,12 +57,23 @@ describe('useAudioPlayer', () => {
       preload = ''
       muted = false
       volume = 1
-      paused = false
+      paused = true
+      loop = false
+      playsInline = false
+      src = ''
       srcObject: MediaStream | null = null
       style: Record<string, string> = {}
       setAttribute = vi.fn()
-      play = vi.fn().mockResolvedValue(undefined)
-      pause = vi.fn()
+      addEventListener = vi.fn()
+      removeAttribute = vi.fn()
+      play = vi.fn().mockImplementation(() => {
+        this.paused = false
+        return Promise.resolve()
+      })
+      pause = vi.fn().mockImplementation(() => {
+        this.paused = true
+      })
+      load = vi.fn()
       remove = vi.fn()
     }
 
@@ -109,9 +84,15 @@ describe('useAudioPlayer', () => {
       }) as unknown as typeof AudioContext
     )
     vi.stubGlobal('HTMLAudioElement', FakeAudio)
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:wav'),
+      revokeObjectURL: vi.fn(),
+    })
     vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
       if (tag === 'audio') {
-        return new FakeAudio() as unknown as HTMLElement
+        const audio = new FakeAudio()
+        createdAudio.push(audio)
+        return audio as unknown as HTMLElement
       }
       return document.createElementNS('http://www.w3.org/1999/xhtml', tag)
     }) as typeof document.createElement)
@@ -124,43 +105,25 @@ describe('useAudioPlayer', () => {
     vi.restoreAllMocks()
   })
 
-  it('schedules chunks gap-free from currentTime', () => {
-    const { result } = renderHook(() => useAudioPlayer())
-
-    const chunkA = new Int16Array(240)
-    const chunkB = new Int16Array(480)
-
-    act(() => {
-      result.current.playChunk(chunkA)
-      result.current.playChunk(chunkB)
-    })
-
-    expect(createdSources).toHaveLength(2)
-    expect(createdSources[0].start).toHaveBeenCalledWith(10)
-    expect(createdSources[1].start).toHaveBeenCalledWith(10.01)
-    expect(result.current.isPlaying()).toBe(true)
-  })
-
-  it('stop() stops all scheduled sources and clears playing state', () => {
+  it('queues WAV playback from PCM chunks', () => {
+    vi.useFakeTimers()
     const { result } = renderHook(() => useAudioPlayer())
 
     act(() => {
-      result.current.playChunk(new Int16Array(240))
-      result.current.playChunk(new Int16Array(240))
+      result.current.playChunk(new Int16Array(2400))
     })
 
     expect(result.current.isPlaying()).toBe(true)
+    expect(createdAudio.some((audio) => audio.play.mock.calls.length > 0)).toBe(true)
 
     act(() => {
       result.current.stop()
     })
-
-    expect(createdSources[0].stop).toHaveBeenCalled()
-    expect(createdSources[1].stop).toHaveBeenCalled()
     expect(result.current.isPlaying()).toBe(false)
+    vi.useRealTimers()
   })
 
-  it('ensureContext unlocks a suspended AudioContext and plays the audio element', async () => {
+  it('ensureContext resumes AudioContext', async () => {
     fakeContext.state = 'suspended'
     const { result } = renderHook(() => useAudioPlayer())
 
@@ -170,18 +133,5 @@ describe('useAudioPlayer', () => {
 
     expect(AudioContext).toHaveBeenCalled()
     expect(fakeContext.resume).toHaveBeenCalled()
-    expect(fakeContext.createMediaStreamDestination).toHaveBeenCalled()
-  })
-
-  it('resamples 24kHz PCM when context sample rate differs', () => {
-    fakeContext.sampleRate = 48000
-    const { result } = renderHook(() => useAudioPlayer())
-
-    act(() => {
-      result.current.playChunk(new Int16Array(240))
-    })
-
-    expect(fakeContext.createBuffer).toHaveBeenCalledWith(1, 480, 48000)
-    expect(createdSources[0].start).toHaveBeenCalledWith(10)
   })
 })

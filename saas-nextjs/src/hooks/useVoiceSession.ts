@@ -93,7 +93,9 @@ export const useVoiceSession = () => {
       // PCM16 little-endian; ignore trailing odd byte if present.
       const byteLength = event.data.byteLength - (event.data.byteLength % 2)
       if (byteLength > 0) {
-        handlersRef.current.onAudio?.(new Int16Array(event.data, 0, byteLength / 2))
+      const samples = new Int16Array(byteLength / 2)
+      samples.set(new Int16Array(event.data, 0, byteLength / 2))
+      handlersRef.current.onAudio?.(samples)
       }
       return
     }
@@ -102,7 +104,9 @@ export const useVoiceSession = () => {
       void event.data.arrayBuffer().then((buf) => {
         const byteLength = buf.byteLength - (buf.byteLength % 2)
         if (byteLength > 0) {
-          handlersRef.current.onAudio?.(new Int16Array(buf, 0, byteLength / 2))
+          const samples = new Int16Array(byteLength / 2)
+          samples.set(new Int16Array(buf, 0, byteLength / 2))
+          handlersRef.current.onAudio?.(samples)
         }
       })
       return
@@ -286,6 +290,14 @@ export const useVoiceSession = () => {
     ws.send(buffer)
   }, [])
 
+  const sendAudioStreamEnd = useCallback((): void => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return
+    }
+    ws.send(JSON.stringify({ type: 'audio_stream_end' }))
+  }, [])
+
   useEffect(() => {
     return () => {
       intentionalCloseRef.current = true
@@ -311,5 +323,6 @@ export const useVoiceSession = () => {
     connect,
     disconnect,
     sendAudio,
+    sendAudioStreamEnd,
   }
 }

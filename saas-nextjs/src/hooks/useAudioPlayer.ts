@@ -1,93 +1,152 @@
 'use client'
 
 import { useCallback, useRef } from 'react'
+import { encodePcm16ToWav } from '@/lib/pcm-wav'
 import {
-  getPlaybackDestination,
-  getSharedAudioContext,
+  getSpeechAudioElement,
   kickPlaybackElement,
   unlockSharedAudioContext,
 } from '@/lib/shared-audio-context'
 
 const SOURCE_SAMPLE_RATE = 24000
+const FLUSH_SAMPLES = 2400
 
-const int16ToFloat32 = (pcm: Int16Array): Float32Array => {
-  const floats = new Float32Array(pcm.length)
-  for (let i = 0; i < pcm.length; i++) {
-    floats[i] = pcm[i] / 32768
-  }
-  return floats
+const copyPcm = (pcm: Int16Array): Int16Array => {
+  const copy = new Int16Array(pcm.length)
+  copy.set(pcm)
+  return copy
 }
 
-const resampleLinear = (
-  input: Float32Array,
-  fromRate: number,
-  toRate: number
-): Float32Array => {
-  if (fromRate === toRate || input.length === 0) {
-    return input
+const concatPcm = (chunks: Int16Array[]): Int16Array => {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+  const merged = new Int16Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.length
   }
-
-  const ratio = fromRate / toRate
-  const outLength = Math.max(1, Math.round(input.length / ratio))
-  const output = new Float32Array(outLength)
-
-  for (let i = 0; i < outLength; i++) {
-    const srcIndex = i * ratio
-    const idx = Math.floor(srcIndex)
-    const frac = srcIndex - idx
-    const s0 = input[idx] ?? 0
-    const s1 = input[Math.min(idx + 1, input.length - 1)] ?? s0
-    output[i] = s0 + (s1 - s0) * frac
-  }
-
-  return output
+  return merged
 }
 
 /**
- * Plays 24 kHz PCM Int16 chunks from Gemini with gap-free scheduling.
- * Output goes to both AudioContext.destination and an HTMLAudioElement sink
- * so speakers keep working while the microphone graph is active.
+ * Plays 24 kHz PCM as queued WAV files on an HTMLAudioElement.
+ * This is the path that stays audible during getUserMedia on mobile browsers.
  */
 export const useAudioPlayer = () => {
-  const nextStartTimeRef = useRef(0)
-  const sourcesRef = useRef<AudioBufferSourceNode[]>([])
-  const gainRef = useRef<GainNode | null>(null)
+  const pendingRef = useRef<Int16Array[]>([])
+  const queueRef = useRef<string[]>([])
+  const playingRef = useRef(false)
+  const currentUrlRef = useRef<string | null>(null)
+  const listenersBoundRef = useRef(false)
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const ensureOutputGain = useCallback((ctx: AudioContext): GainNode => {
-    if (!gainRef.current || gainRef.current.context !== ctx) {
-      const gain = ctx.createGain()
-      gain.gain.value = 1
-      const mediaDest = getPlaybackDestination(ctx)
-      gain.connect(mediaDest)
-      gain.connect(ctx.destination)
-      gainRef.current = gain
+  const revokeUrl = (url: string | null): void => {
+    if (!url) return
+    try {
+      URL.revokeObjectURL(url)
+    } catch {
+      // ignore
     }
-    return gainRef.current
+  }
+
+  const bindSpeechElement = useCallback((audio: HTMLAudioElement, playNext: () => void): void => {
+    if (listenersBoundRef.current) {
+      return
+    }
+    listenersBoundRef.current = true
+    audio.addEventListener('ended', () => {
+      revokeUrl(currentUrlRef.current)
+      currentUrlRef.current = null
+      playingRef.current = false
+      playNext()
+    })
+    audio.addEventListener('error', () => {
+      revokeUrl(currentUrlRef.current)
+      currentUrlRef.current = null
+      playingRef.current = false
+      playNext()
+    })
   }, [])
+
+  const playNext = useCallback((): void => {
+    if (playingRef.current) {
+      return
+    }
+    const nextUrl = queueRef.current.shift()
+    if (!nextUrl) {
+      return
+    }
+
+    const audio = getSpeechAudioElement()
+    bindSpeechElement(audio, playNext)
+    currentUrlRef.current = nextUrl
+    playingRef.current = true
+    audio.muted = false
+    audio.volume = 1
+    audio.src = nextUrl
+    void audio.play().catch(() => {
+      playingRef.current = false
+      revokeUrl(nextUrl)
+      currentUrlRef.current = null
+      playNext()
+    })
+  }, [bindSpeechElement])
+
+  const enqueueWav = useCallback(
+    (pcm: Int16Array): void => {
+      if (pcm.length === 0) {
+        return
+      }
+      const wav = encodePcm16ToWav(pcm, SOURCE_SAMPLE_RATE)
+      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }))
+      queueRef.current.push(url)
+      playNext()
+    },
+    [playNext]
+  )
+
+  const flushPending = useCallback((): void => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+    if (pendingRef.current.length === 0) {
+      return
+    }
+    const merged = concatPcm(pendingRef.current)
+    pendingRef.current = []
+    enqueueWav(merged)
+  }, [enqueueWav])
 
   const ensureContext = useCallback(async (): Promise<void> => {
     await unlockSharedAudioContext()
   }, [])
 
   const stop = useCallback((): void => {
-    for (const source of sourcesRef.current) {
-      try {
-        source.stop()
-      } catch {
-        // already stopped
-      }
-      try {
-        source.disconnect()
-      } catch {
-        // already disconnected
-      }
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
     }
-    sourcesRef.current = []
-    nextStartTimeRef.current = 0
+    pendingRef.current = []
+    for (const url of queueRef.current) {
+      revokeUrl(url)
+    }
+    queueRef.current = []
+    revokeUrl(currentUrlRef.current)
+    currentUrlRef.current = null
+    playingRef.current = false
+    try {
+      const audio = getSpeechAudioElement()
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
+    } catch {
+      // element may not exist yet
+    }
   }, [])
 
   const isPlaying = useCallback((): boolean => {
-    return sourcesRef.current.length > 0
+    return playingRef.current || queueRef.current.length > 0 || pendingRef.current.length > 0
   }, [])
 
   const playChunk = useCallback(
@@ -95,49 +154,26 @@ export const useAudioPlayer = () => {
       if (pcm.length === 0) {
         return
       }
-
-      let ctx: AudioContext
-      try {
-        ctx = getSharedAudioContext()
-      } catch {
-        return
-      }
-
-      if (ctx.state === 'suspended') {
-        void ctx.resume()
-      }
       void kickPlaybackElement()
-
-      const floats = resampleLinear(int16ToFloat32(pcm), SOURCE_SAMPLE_RATE, ctx.sampleRate)
-      if (floats.length === 0) {
+      pendingRef.current.push(copyPcm(pcm))
+      const buffered = pendingRef.current.reduce((sum, chunk) => sum + chunk.length, 0)
+      if (buffered >= FLUSH_SAMPLES) {
+        flushPending()
         return
       }
-
-      const buffer = ctx.createBuffer(1, floats.length, ctx.sampleRate)
-      buffer.getChannelData(0).set(floats)
-
-      const source = ctx.createBufferSource()
-      source.buffer = buffer
-      source.connect(ensureOutputGain(ctx))
-
-      const now = ctx.currentTime
-      if (nextStartTimeRef.current && nextStartTimeRef.current < now - 0.05) {
-        nextStartTimeRef.current = now
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current)
       }
-      const startAt = Math.max(now, nextStartTimeRef.current)
-      source.start(startAt)
-      nextStartTimeRef.current = startAt + buffer.duration
-
-      sourcesRef.current.push(source)
-      source.onended = () => {
-        sourcesRef.current = sourcesRef.current.filter((item) => item !== source)
-      }
+      flushTimerRef.current = setTimeout(() => {
+        flushPending()
+      }, 80)
     },
-    [ensureOutputGain]
+    [flushPending]
   )
 
   return {
     playChunk,
+    flush: flushPending,
     stop,
     isPlaying,
     ensureContext,
