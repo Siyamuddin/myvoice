@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useAudioPlayer } from '../useAudioPlayer'
-import { encodePcm16ToWav } from '@/lib/pcm-wav'
+import { encodePcm16ToWav, decodeBase64Pcm16 } from '@/lib/pcm-wav'
 import { __resetSharedAudioContextForTests } from '@/lib/shared-audio-context'
 
 describe('encodePcm16ToWav', () => {
@@ -20,6 +20,19 @@ describe('encodePcm16ToWav', () => {
     expect(view.getUint16(34, true)).toBe(16)
     expect(view.getUint32(40, true)).toBe(pcm.byteLength)
     expect(wav.byteLength).toBe(44 + pcm.byteLength)
+  })
+})
+
+describe('decodeBase64Pcm16', () => {
+  it('round-trips PCM bytes', () => {
+    const samples = new Int16Array([1, -2, 300, -400])
+    const bytes = new Uint8Array(samples.buffer)
+    let binary = ''
+    bytes.forEach((b) => {
+      binary += String.fromCharCode(b)
+    })
+    const decoded = decodeBase64Pcm16(btoa(binary))
+    expect(Array.from(decoded)).toEqual(Array.from(samples))
   })
 })
 

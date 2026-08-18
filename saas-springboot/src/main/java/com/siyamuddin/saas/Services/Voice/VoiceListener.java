@@ -16,6 +16,9 @@ public interface VoiceListener {
 
     void onInterrupted();
 
+    default void onTurnComplete() {
+    }
+
     void onError(Throwable t);
 
     void onClose();

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getWsBase } from '@/lib/config'
 import { storage } from '@/lib/storage'
+import { decodeBase64Pcm16 } from '@/lib/pcm-wav'
 
 export type VoiceSessionState =
   | 'idle'
@@ -138,6 +139,13 @@ export const useVoiceSession = () => {
       }
       case 'assistant_transcript': {
         handlersRef.current.onAssistantTranscript?.(String(frame.text ?? ''))
+        break
+      }
+      case 'audio': {
+        const payload = typeof frame.data === 'string' ? frame.data : ''
+        if (payload) {
+          handlersRef.current.onAudio?.(decodeBase64Pcm16(payload))
+        }
         break
       }
       case 'interrupted': {

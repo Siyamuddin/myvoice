@@ -15,7 +15,7 @@ import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.socket.handler.AbstractWebSocketHandler;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -29,7 +29,7 @@ import java.util.function.Supplier;
 
 @Slf4j
 @Component
-public class VoiceWebSocketHandler extends TextWebSocketHandler {
+public class VoiceWebSocketHandler extends AbstractWebSocketHandler {
 
     private static final ConcurrentHashMap<String, Integer> ACTIVE_SESSIONS = new ConcurrentHashMap<>();
 
@@ -266,7 +266,7 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
         return new VoiceListener() {
             @Override
             public void onAudio(byte[] pcm24k) {
-                sendBinary(session, pcm24k);
+                sendAudioJson(session, pcm24k);
             }
 
             @Override
@@ -285,6 +285,11 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
             }
 
             @Override
+            public void onTurnComplete() {
+                sendJson(session, Map.of("type", "audio_end"));
+            }
+
+            @Override
             public void onError(Throwable t) {
                 log.warn("Gemini Live error for session {}: {}", session.getId(), t.toString());
                 String message = t.getMessage() != null ? t.getMessage() : t.toString();
@@ -293,12 +298,33 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
 
             @Override
             public void onClose() {
-                if (session.isOpen()) {
-                    try {
-                        session.close(CloseStatus.NORMAL);
-                    } catch (IOException e) {
-                        log.debug("Failed to close browser session after Gemini close", e);
-                    }
+                VoiceSessionHolder holder = sessions.get(session.getId());
+                if (holder == null || !session.isOpen()) {
+                    return;
+                }
+                log.warn("Gemini Live socket closed; reconnecting agent for session {}", session.getId());
+                try {
+                    GeminiLiveClient next = clientFactory.get();
+                    VoiceListener listener = createListener(session);
+                    next.connect(listener);
+                    sessions.put(
+                            session.getId(),
+                            new VoiceSessionHolder(
+                                    holder.username(),
+                                    holder.userId(),
+                                    holder.user(),
+                                    next,
+                                    listener,
+                                    holder.startedAtMs(),
+                                    holder.timeoutFuture(),
+                                    holder.heldGlobalSlot()));
+                    sendJson(session, Map.of("type", "agent_reconnected"));
+                } catch (Exception e) {
+                    log.error("Failed to reconnect Gemini for session {}", session.getId(), e);
+                    sendJson(session, Map.of(
+                            "type", "error",
+                            "code", "GEMINI_CONNECT_FAILED",
+                            "message", "Voice agent disconnected. Tap Retry."));
                 }
             }
         };
@@ -378,15 +404,18 @@ public class VoiceWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void sendBinary(WebSocketSession session, byte[] pcm24k) {
+    private void sendAudioJson(WebSocketSession session, byte[] pcm24k) {
+        if (pcm24k == null || pcm24k.length == 0) {
+            return;
+        }
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("type", "audio");
+        node.put("mimeType", "audio/pcm;rate=24000");
+        node.put("data", AudioCodec.toBase64(pcm24k));
         try {
-            synchronized (session) {
-                if (session.isOpen()) {
-                    session.sendMessage(new BinaryMessage(pcm24k));
-                }
-            }
-        } catch (IOException e) {
-            log.debug("Failed to send binary audio frame", e);
+            sendRawText(session, objectMapper.writeValueAsString(node));
+        } catch (Exception e) {
+            log.debug("Failed to send audio JSON frame", e);
         }
     }
 
