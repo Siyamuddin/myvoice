@@ -99,6 +99,7 @@ class GeminiLiveClientTest {
         assertThat(parsed.toolCall).isFalse();
         assertThat(parsed.setupComplete).isFalse();
         assertThat(parsed.errorMessage).isNull();
+        assertThat(parsed.turnComplete).isFalse();
     }
 
     @Test
@@ -142,6 +143,16 @@ class GeminiLiveClientTest {
         assertThat(parsed.setupComplete).isTrue();
         assertThat(parsed.toolCall).isFalse();
         assertThat(parsed.errorMessage).isNull();
+        assertThat(parsed.audioChunks).isEmpty();
+    }
+
+    @Test
+    void parseServerContentMarksTurnComplete() {
+        GeminiLiveClient.ParsedServerContent parsed =
+                GeminiLiveClient.parseServerContent(
+                        "{\"serverContent\":{\"turnComplete\":true,\"generationComplete\":true}}");
+
+        assertThat(parsed.turnComplete).isTrue();
         assertThat(parsed.audioChunks).isEmpty();
     }
 

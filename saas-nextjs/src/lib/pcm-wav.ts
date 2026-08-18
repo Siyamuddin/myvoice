@@ -43,3 +43,14 @@ export const pcmRms = (pcm: Int16Array): number => {
   }
   return Math.sqrt(sum / pcm.length)
 }
+
+export const decodeBase64Pcm16 = (base64: string): Int16Array => {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  const even = bytes.byteLength - (bytes.byteLength % 2)
+  const aligned = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + even)
+  return new Int16Array(aligned)
+}

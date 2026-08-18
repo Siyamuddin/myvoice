@@ -19,7 +19,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
-import java.nio.ByteBuffer;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -224,11 +224,12 @@ class VoiceWebSocketHandlerTest {
         byte[] pcm24k = new byte[] {9, 8, 7, 6};
         listenerRef.get().onAudio(pcm24k);
 
-        ArgumentCaptor<BinaryMessage> captor = ArgumentCaptor.forClass(BinaryMessage.class);
+        ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
         verify(session).sendMessage(captor.capture());
-        ByteBuffer payload = captor.getValue().getPayload();
-        byte[] received = new byte[payload.remaining()];
-        payload.get(received);
+        JsonNode json = MAPPER.readTree(captor.getValue().getPayload());
+        assertThat(json.get("type").asText()).isEqualTo("audio");
+        assertThat(json.get("mimeType").asText()).isEqualTo("audio/pcm;rate=24000");
+        byte[] received = Base64.getDecoder().decode(json.get("data").asText());
         assertThat(received).isEqualTo(pcm24k);
     }
 

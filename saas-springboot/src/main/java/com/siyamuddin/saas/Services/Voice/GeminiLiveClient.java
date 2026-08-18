@@ -140,7 +140,7 @@ public class GeminiLiveClient {
         }
         WebSocket ws = awaitSocketReady();
         awaitSetupComplete();
-        log.info("sendAudio forwarding chunk of {} bytes", pcm16k.length);
+        log.debug("sendAudio {} bytes", pcm16k.length);
         String message = buildRealtimeAudioMessage(AudioCodec.toBase64(pcm16k));
         ws.sendText(message, true);
     }
@@ -276,6 +276,12 @@ public class GeminiLiveClient {
             if (serverContent.path("interrupted").asBoolean(false)) {
                 result.interrupted = true;
             }
+            if (serverContent.path("turnComplete").asBoolean(false)
+                    || serverContent.path("turn_complete").asBoolean(false)
+                    || serverContent.path("generationComplete").asBoolean(false)
+                    || serverContent.path("generation_complete").asBoolean(false)) {
+                result.turnComplete = true;
+            }
 
             JsonNode inputTranscription = serverContent.get("inputTranscription");
             if (inputTranscription != null && inputTranscription.hasNonNull("text")) {
@@ -340,6 +346,9 @@ public class GeminiLiveClient {
         }
         for (byte[] chunk : parsed.audioChunks) {
             listener.onAudio(chunk);
+        }
+        if (parsed.turnComplete) {
+            listener.onTurnComplete();
         }
     }
 
@@ -510,12 +519,12 @@ public class GeminiLiveClient {
 
         @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
-            log.info("Gemini onText received: last={} data={}", last, data);
+            log.debug("Gemini onText last={} chars={}", last, data != null ? data.length() : 0);
             textBuffer.append(data);
             if (last) {
                 String json = textBuffer.toString();
                 textBuffer.setLength(0);
-                log.info("Gemini onText complete frame: {}", json);
+                log.info("Gemini JSON frame {} chars", json.length());
                 handleJsonFrame(json);
             }
             webSocket.request(1);
@@ -567,6 +576,7 @@ public class GeminiLiveClient {
         String inputTranscription;
         String outputTranscription;
         boolean interrupted;
+        boolean turnComplete;
         boolean toolCall;
         boolean setupComplete;
         String errorMessage;

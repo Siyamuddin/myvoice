@@ -87,6 +87,8 @@ export const VoiceStudio = () => {
   const micErrorToastShownRef = useRef(false)
   const agentHoldRef = useRef(false)
   const streamEndSentRef = useRef(false)
+  const voicedThisTurnRef = useRef(false)
+  const silenceMsRef = useRef(0)
 
   const playChunkRef = useRef(playChunk)
   const flushPlayerRef = useRef(flushPlayer)
@@ -135,9 +137,10 @@ export const VoiceStudio = () => {
       },
       onUserTranscript: handleUserTranscript,
       onAssistantTranscript: handleAssistantTranscript,
+      onAudioEnd: () => {
+        flushPlayerRef.current()
+      },
       onInterrupted: () => {
-        // Ignore server barge-in while we are holding the mic closed for playback.
-        // Continuous capture otherwise cancels the reply before it is audible.
         if (agentHoldRef.current || isPlayingRef.current()) {
           return
         }
@@ -148,9 +151,11 @@ export const VoiceStudio = () => {
   }, [connect, handleUserTranscript, handleAssistantTranscript, handleSessionError, beginAgentHold])
 
   const handleStopRecording = useCallback(() => {
-    agentHoldRef.current = false
-    streamEndSentRef.current = false
-    flushPlayerRef.current()
+    if (!streamEndSentRef.current) {
+      streamEndSentRef.current = true
+      sendAudioStreamEndRef.current()
+    }
+    agentHoldRef.current = true
     stopRecording()
   }, [stopRecording])
 
@@ -191,17 +196,35 @@ export const VoiceStudio = () => {
       connectSession()
     }
 
+    voicedThisTurnRef.current = false
+    silenceMsRef.current = 0
+    agentHoldRef.current = false
+    streamEndSentRef.current = false
+
     await startRecording((pcm) => {
+      const rms = pcmRms(pcm)
       if (agentHoldRef.current || isPlayingRef.current()) {
-        if (pcmRms(pcm) > 0.08) {
-          agentHoldRef.current = false
-          streamEndSentRef.current = false
-          stopPlayerRef.current()
-          sendAudioRef.current(pcm)
-        }
         return
       }
       sendAudioRef.current(pcm)
+      if (rms > 0.018) {
+        voicedThisTurnRef.current = true
+        silenceMsRef.current = 0
+        return
+      }
+      if (!voicedThisTurnRef.current) {
+        return
+      }
+      silenceMsRef.current += 20
+      if (silenceMsRef.current >= 900) {
+        voicedThisTurnRef.current = false
+        silenceMsRef.current = 0
+        agentHoldRef.current = true
+        if (!streamEndSentRef.current) {
+          streamEndSentRef.current = true
+          sendAudioStreamEndRef.current()
+        }
+      }
     })
 
     // Re-assert playback unlock after getUserMedia (some mobile browsers re-suspend).
@@ -288,7 +311,7 @@ export const VoiceStudio = () => {
           <p className="text-sm font-semibold tracking-wide text-teal">Free beta</p>
           <h1 className="mt-1 font-display text-3xl text-ink sm:text-5xl">Talk</h1>
           <p className="mt-2 text-sm text-ink-soft sm:text-base">
-            English, Bangla, or Korean — headphones recommended.
+            English, Bangla, or Korean — tap mic, talk, then pause and listen.
           </p>
         </div>
         <div
@@ -324,7 +347,7 @@ export const VoiceStudio = () => {
         >
           {messages.length === 0 ? (
             <p className="py-10 text-center text-sm text-ink-soft sm:py-12 sm:text-base">
-              Tap the mic and start talking…
+              Tap the mic, speak, then pause — the agent replies out loud.
             </p>
           ) : (
             messages.map((message, index) => (
@@ -407,7 +430,7 @@ export const VoiceStudio = () => {
           </div>
 
           <p className="px-2 text-center text-xs text-ink-soft sm:text-sm">
-            Use headphones — speaker audio can echo into the mic.
+            Speak, then pause. The agent answers after you stop talking.
           </p>
         </div>
       </div>
